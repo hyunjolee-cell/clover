@@ -788,3 +788,13 @@ select {
   html, body { background: var(--bg); color: var(--g900); }
 }
 :root[data-theme="dark"], :root[data-theme="light"] { color-scheme: light only; }
+
+/* 비어 있는 화면에서 바로 채울 수 있게 안내 + 행동 */
+.empty-cta {
+  display: grid; gap: 8px; justify-items: center;
+  padding: 36px 20px; text-align: center;
+  background: var(--g50); border-radius: var(--r-card);
+}
+.empty-cta p { font-size: 15px; font-weight: 600; color: var(--g700); }
+.empty-cta small { color: var(--g500); max-width: 34ch; }
+.empty-cta button { margin-top: 8px; min-width: 180px; }

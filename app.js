@@ -1535,8 +1535,9 @@
 
         <details class="card fold">
           <summary>기존 가계부 기본값 불러오기</summary>
-          <p class="note">쓰시던 가계부(25.10)의 정기소득·월 고정비·공과금·적금·생활비 예산을
-            한 번에 불러옵니다. 생활비 사용내역·보너스·자산·목표와 변경 로그는 그대로 둡니다.</p>
+          <p class="note">쓰시던 가계부(25.10)의 정기소득·월 고정비·공과금·적금·생활비 예산과
+            통장·연동 카드·자동이체를 한 번에 불러옵니다.
+            생활비 사용내역·보너스·자산·목표와 변경 로그는 그대로 둡니다.</p>
           <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
         </details>
 
@@ -1722,8 +1723,14 @@
 
   function flowDiagram() {
     const accounts = app.state.accounts;
-    if (!accounts.length)
-      return emptyRow('통장을 추가하면 돈의 흐름이 그림으로 그려집니다.');
+    if (!accounts.length) {
+      return `
+        <div class="empty-cta">
+          <p>아직 등록된 통장이 없습니다.</p>
+          <small>쓰시던 통장 구조를 한 번에 불러오거나, 아래에서 직접 추가하실 수 있습니다.</small>
+          <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
+        </div>`;
+    }
 
     const sources = accounts.filter(a => a.kind === 'salary');
     const roots = sources.length ? sources : [accounts[0]];
@@ -2654,42 +2661,35 @@
 
     if (t.closest('[data-load-seed]')) {
       const seed = seedState();
-      const counts = {
-        정기소득: seed.recurringIncomes.length, '월 고정비': seed.fixedCosts.length,
-        공과금: seed.utilities.length, '적금·저축': seed.savings.length,
-        '생활비 예산': seed.budgets.length
-      };
-      const now = {
-        정기소득: app.state.recurringIncomes.length, '월 고정비': app.state.fixedCosts.length,
-        공과금: app.state.utilities.length, '적금·저축': app.state.savings.length,
-        '생활비 예산': app.state.budgets.length
-      };
-      const hasAny = Object.values(now).some(n => n > 0);
+      /* 통장·카드·자동이체는 서로를 id 로 참조한다.
+         일부만 바꾸면 화살표가 끊긴 흐름도가 되므로 셋을 항상 함께 교체한다. */
+      const FIELDS = [
+        ['정기소득', 'recurringIncomes'], ['월 고정비', 'fixedCosts'],
+        ['공과금', 'utilities'], ['적금·저축', 'savings'], ['생활비 예산', 'budgets'],
+        ['통장', 'accounts'], ['연동 카드', 'cards'], ['자동이체', 'flows']
+      ];
+      const lines = FIELDS.map(([label, key]) =>
+        `· ${label} ${app.state[key].length}건 → ${seed[key].length}건`);
+      const hasAny = FIELDS.some(([, key]) => app.state[key].length > 0);
+
       if (!confirm(
         `기존 가계부 기본값을 불러올까요?\n\n` +
-        Object.keys(counts).map(k => `· ${k} ${now[k]}건 → ${counts[k]}건`).join('\n') +
+        lines.join('\n') +
         (hasAny ? `\n\n지금 등록된 위 항목은 기본값으로 바뀝니다.` : '') +
         `\n생활비 내역·보너스·자산·목표와 변경 로그는 그대로 남습니다.`
       )) return;
 
       await mutate(
         state => {
-          state.recurringIncomes = seed.recurringIncomes;
-          state.fixedCosts = seed.fixedCosts;
-          state.utilities = seed.utilities;
-          state.savings = seed.savings;
-          state.budgets = seed.budgets;
-          if (!state.scenarios.length) state.scenarios = seed.scenarios;
+          for (const [, key] of FIELDS) state[key] = clone(seed[key]);
+          if (!state.scenarios.length) state.scenarios = clone(seed.scenarios);
         },
         {
           action: 'update', type: 'settings', id: null,
-          summary: '기존 가계부 기본값 불러오기 (정기소득·고정비·공과금·적금·예산 교체)',
-          pick: s => ({
-            정기소득: s.recurringIncomes.length, '월 고정비': s.fixedCosts.length,
-            공과금: s.utilities.length, '적금·저축': s.savings.length,
-            '생활비 예산': s.budgets.length
-          }),
-          success: '기본값을 불러왔습니다.'
+          summary: '기존 가계부 기본값 불러오기 ' +
+                   '(정기소득·고정비·공과금·적금·예산·통장·카드·자동이체 교체)',
+          pick: s => Object.fromEntries(FIELDS.map(([label, key]) => [label, s[key].length])),
+          success: '기본값을 불러왔습니다. 자금 흐름도까지 새로 채웠습니다.'
         }
       );
       return;
