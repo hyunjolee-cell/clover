@@ -224,18 +224,29 @@
       util('인터넷', 0)
     ];
 
+    /* 적금은 매달 넣는 금액과 지금까지 모인 잔액을 함께 둔다.
+       잔액은 현조님 통장 화면 기준이며 앱에서 언제든 고칠 수 있다. */
+    const saving = (name, owner, amount, balance = 0, memo = '') => {
+      const r = row(name, owner, amount, memo);
+      r.startBalance = balance;
+      r.startMonth = currentMonth;
+      r.withdrawals = [];
+      return r;
+    };
+
     s.savings = [
-      row('청년적금', '현조', 500000),
-      row('청년적금', '신영', 500000),
-      row('주택청약', '현조', 100000),
-      row('주택청약', '신영', 100000),
-      row('집마련적금', '공동', 2050000, '월별 상이, 기타 소득 발생 시 추가 = 유동저축'),
-      row('부모님적금', '공동', 400000),
-      row('비상금적금', '공동', 120000),
-      row('여행적금', '공동', 100000, '돈 남으면 넣기'),
-      row('옷적금', '공동', 100000, '돈 남으면 넣기'),
-      row('조카적금', '공동', 30000),
-      row('경조사', '공동', 100000)
+      saving('청년적금', '현조', 500000),
+      saving('청년적금', '신영', 500000),
+      saving('주택청약', '현조', 100000),
+      saving('주택청약', '신영', 100000),
+      saving('집마련적금', '공동', 2050000, 11841368,
+             '월별 상이, 기타 소득 발생 시 추가 = 유동저축'),
+      saving('부모님적금', '공동', 400000, 3166350),
+      saving('비상금적금', '공동', 120000, 241213),
+      saving('여행적금', '공동', 100000, 4192, '돈 남으면 넣기'),
+      saving('옷적금', '공동', 100000, 32244, '돈 남으면 넣기'),
+      saving('조카적금', '공동', 30000, 918423),
+      saving('경조사', '공동', 100000, 984477)
     ];
 
     // 쓰는 만큼 달라지는 항목은 시트의 소분류 그대로 나눠서 예산으로 잡는다.
@@ -339,6 +350,20 @@
         x.memo ||= '';
         fixHistory(x, 'history');
       }
+    }
+
+    /* 적금은 매달 나가는 돈이면서 동시에 쌓이는 자산이다.
+       시작 잔액과 인출 기록을 두어 지금 얼마가 모여 있는지 계산한다. */
+    for (const x of s.savings) {
+      x.startBalance = num(x.startBalance);
+      x.startMonth = String(x.startMonth || x.history[0]?.from || currentMonth).slice(0, 7);
+      if (!Array.isArray(x.withdrawals)) x.withdrawals = [];
+      x.withdrawals = x.withdrawals.map(w => ({
+        id: w.id || uid(),
+        month: String(w.month || currentMonth).slice(0, 7),
+        amount: num(w.amount),
+        memo: w.memo || ''
+      }));
     }
     for (const x of s.utilities) {
       x.id ||= uid(); x.name ||= '이름 없음';
@@ -537,20 +562,39 @@
 
   /* 자산·부채는 월별 이력을 갖는다. 기본은 지금 보고 있는 달 기준이다. */
   const assetAt = (a, month = app.month) => historyValue(a.history, month);
+  /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다 */
+  function savingBalance(sv, month = app.month) {
+    let sum = num(sv.startBalance);
+    const from = sv.startMonth;
+    if (String(month) >= String(from)) {
+      const n = monthsBetween(from, month);
+      for (let i = 0; i <= n; i++) sum += historyValue(sv.history, shiftMonth(from, i));
+    }
+    for (const w of sv.withdrawals) {
+      if (String(w.month) <= String(month)) sum -= num(w.amount);
+    }
+    return Math.max(0, sum);
+  }
+  const savingBalanceTotal = (month = app.month) =>
+    app.state.savings.reduce((s, sv) => s + savingBalance(sv, month), 0);
+
   const assetTotal = (month = app.month) =>
     app.state.assets.filter(a => a.kind === 'asset')
       .reduce((s, a) => s + assetAt(a, month), 0);
   const debtTotal = (month = app.month) =>
     app.state.assets.filter(a => a.kind === 'debt')
       .reduce((s, a) => s + assetAt(a, month), 0);
-  const netAssets = (month = app.month) => assetTotal(month) - debtTotal(month);
+  /* 순자산 = 등록 자산 + 모아 둔 적금 − 부채 */
+  const netAssets = (month = app.month) =>
+    assetTotal(month) + savingBalanceTotal(month) - debtTotal(month);
 
   /* 최근 N개월 순자산 추이 */
   function netAssetSeries(months = 12, endMonth = app.month) {
     const out = [];
     for (let i = months - 1; i >= 0; i--) {
       const m = shiftMonth(endMonth, -i);
-      out.push({ month: m, asset: assetTotal(m), debt: debtTotal(m), net: netAssets(m) });
+      out.push({ month: m, asset: assetTotal(m) + savingBalanceTotal(m),
+                 debt: debtTotal(m), net: netAssets(m) });
     }
     return out;
   }
@@ -598,9 +642,10 @@
       ? app.state.assets.filter(x => x.kind === 'debt' && sc.debtIds.includes(x.id))
       : app.state.assets.filter(x => x.kind === 'debt');
 
-    // 시작 시점(기준 시작월)의 자산·부채 금액을 쓴다
+    // 시작 시점의 자산·부채와 그때까지 모아 둔 적금 잔액을 함께 본다
     const startValue =
-      assets.reduce((s, x) => s + assetAt(x, start), 0) -
+      assets.reduce((s, x) => s + assetAt(x, start), 0) +
+      savings.reduce((s, x) => s + savingBalance(x, start), 0) -
       debts.reduce((s, x) => s + assetAt(x, start), 0);
 
     const total = maxMonths ?? Math.max(1, num(sc.months));
@@ -1209,27 +1254,45 @@
         <div class="grid two">
           <article class="card">
             <div class="card-head"><h3>이번 달 돈의 흐름</h3></div>
-            <div class="flow">
+            <div class="flow grouped">
+              <div class="flow-group">들어온 돈</div>
               <button type="button" data-goto="settings:income">
                 <span>정기소득</span><b>${won(s.base)}</b></button>
               <button type="button" data-goto="monthly">
-                <span>보너스·상여금</span><b>${won(s.bonus)}</b></button>
+                <span>보너스·상여금 <i class="hint-tag">입력분</i></span>
+                <b>${won(s.bonus)}</b></button>
               <div class="sum"><span>총수입</span><b>${won(s.income)}</b></div>
+
+              <div class="flow-group keep">옮긴 돈 · 없어지지 않고 쌓입니다</div>
               <button type="button" data-goto="settings:saving">
-                <span>적금·저축</span><b class="minus">−${won(s.saving)}</b></button>
+                <span>적금·저축</span>
+                <b class="keep">−${won(s.saving)}</b></button>
+              <div class="flow-side">
+                모아 둔 적금 <b>${won(savingBalanceTotal())}</b></div>
+
+              <div class="flow-group">쓴 돈</div>
               <button type="button" data-goto="settings:fixed">
-                <span>월 고정비</span><b class="minus">−${won(s.fixed)}</b></button>
+                <span>월 고정비 <i class="hint-tag auto">자동</i></span>
+                <b class="minus">−${won(s.fixed)}</b></button>
               <button type="button" data-goto="settings:utility">
-                <span>공과금</span><b class="minus">−${won(s.utility)}</b></button>
+                <span>공과금 <i class="hint-tag auto">자동</i></span>
+                <b class="minus">−${won(s.utility)}</b></button>
               <button type="button" data-goto="budgets">
-                <span>개인 생활비</span><b class="minus">−${won(s.personal)}</b></button>
+                <span>개인 생활비 <i class="hint-tag auto">자동</i></span>
+                <b class="minus">−${won(s.personal)}</b></button>
               <button type="button" data-goto="monthly">
-                <span>공동 생활비 사용</span><b class="minus">−${won(s.spend)}</b></button>
-              <div class="sum"><span>남는 금액</span>
+                <span>공동 생활비 <i class="hint-tag">입력분</i></span>
+                <b class="minus">−${won(s.spend)}</b></button>
+              <div class="sum"><span>총지출</span><b class="minus">−${won(s.expense)}</b></div>
+
+              <div class="sum final"><span>남는 금액</span>
                 <b class="${s.remaining < 0 ? 'minus' : 'plus'}">${won(s.remaining)}</b></div>
             </div>
-            <p class="note">각 줄을 누르면 바로 고칠 수 있는 화면으로 갑니다.
-              개인 생활비는 각자 쓰는 돈이라 예산 전액을 나간 것으로 봅니다.</p>
+            <div class="flow-legend">
+              <span><i class="hint-tag auto">자동</i>내역을 적지 않아도 그 달에 나간 것으로 봅니다</span>
+              <span><i class="hint-tag">입력분</i>적은 만큼만 반영됩니다</span>
+              <span><i class="keep-dot"></i>적금은 나가지만 자산으로 쌓입니다</span>
+            </div>
           </article>
 
           <article class="card">
@@ -1418,12 +1481,14 @@
       const open = app.openRow === `${kind}:${x.id}`;
 
       if (!open) {
+        const bal = kind === 'saving' ? savingBalance(x) : null;
         return `
           <button type="button" class="row-brief" data-open-row="${kind}:${x.id}">
             <span class="brief-main">
               <b>${esc(x.name)}</b>
               ${opts.owner ? ownerTag(x.owner) : ''}
-              ${x.memo ? `<small>${esc(x.memo)}</small>` : ''}
+              ${bal !== null ? `<small class="bal">모인 돈 ${won(bal)}</small>`
+                : x.memo ? `<small>${esc(x.memo)}</small>` : ''}
             </span>
             <span class="brief-amount">${won(value)}</span>
             <span class="brief-arrow">${icon("chevron", 18)}</span>
@@ -1440,8 +1505,33 @@
             <input name="from" type="month" value="${esc(applied)}"></label>
           <label class="field"><span>${opts.amountLabel || '월 금액'}</span>
             <input name="amount" inputmode="numeric" value="${value}"></label>
+          ${kind === 'saving' ? `
+            <label class="field"><span>지금까지 모인 돈</span>
+              <input name="startBalance" inputmode="numeric" value="${num(x.startBalance)}"></label>
+            <label class="field"><span>잔액 기준월</span>
+              <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>` : ''}
           <label class="field wide"><span>메모</span>
             <input name="memo" value="${esc(x.memo || '')}" placeholder="비고를 적어두면 나중에 도움이 됩니다"></label>
+          ${kind === 'saving' ? `
+            <div class="wide bal-box">
+              <div class="bal-now">
+                <span>${monthLabel(app.month)} 기준 모인 돈</span>
+                <b>${won(savingBalance(x))}</b>
+              </div>
+              <div class="row">
+                <button class="secondary" type="button" data-withdraw="${x.id}">
+                  여기서 꺼내 쓰기
+                </button>
+              </div>
+              ${x.withdrawals.length ? `<ul class="wd-list">${
+                [...x.withdrawals].sort((a, b) => b.month.localeCompare(a.month)).map(w => `
+                  <li>
+                    <span>${monthLabel(w.month)} ${w.memo ? `· ${esc(w.memo)}` : ''}</span>
+                    <b class="minus">−${won(w.amount)}</b>
+                    <button class="ghost tiny" type="button"
+                            data-del-withdraw="${x.id}" data-wid="${w.id}">삭제</button>
+                  </li>`).join('')}</ul>` : ''}
+            </div>` : ''}
           <div class="item-actions">
             <button class="secondary" type="submit">저장</button>
             <button class="ghost" type="button" data-close-row>접기</button>
@@ -1660,7 +1750,8 @@
 
         <div class="grid three">
           <article class="card metric"><small>총자산</small>
-            <strong>${won(assetTotal())}</strong></article>
+            <strong>${won(assetTotal() + savingBalanceTotal())}</strong>
+            <small>등록 ${shortWon(assetTotal())} + 적금 ${shortWon(savingBalanceTotal())}</small></article>
           <article class="card metric"><small>총부채</small>
             <strong class="minus">${won(debtTotal())}</strong></article>
           <button class="card metric" type="button" data-goto="forecast"><small>순자산</small>
@@ -1669,6 +1760,35 @@
         </div>
 
         ${netTrend()}
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h3>모아 둔 적금</h3>
+              <small>매달 자동이체로 쌓이는 돈입니다 · 합계 ${won(savingBalanceTotal())}</small>
+            </div>
+            <button class="secondary" type="button" data-goto="settings:saving">적금 관리</button>
+          </div>
+          <div class="list">
+            ${app.state.savings.length ? app.state.savings.map(sv => {
+              const bal = savingBalance(sv);
+              const monthly = historyValue(sv.history, app.month);
+              return `
+                <button type="button" class="row-brief" data-goto="settings:saving">
+                  <span class="brief-main">
+                    <b>${esc(sv.name)}</b>
+                    ${ownerTag(sv.owner)}
+                    <small>매달 ${won(monthly)}${
+                      sv.withdrawals.length ? ` · 인출 ${sv.withdrawals.length}건` : ''}</small>
+                  </span>
+                  <span class="brief-amount">${won(bal)}</span>
+                  <span class="brief-arrow">${icon('chevron', 18)}</span>
+                </button>`;
+            }).join('') : emptyRow('등록된 적금이 없습니다.')}
+          </div>
+          <p class="note">경조사비처럼 쓰기 전까지 모이는 돈도 자산에 포함됩니다.
+            실제로 쓰셨다면 적금 항목에서 <b>꺼내 쓰기</b>로 기록해주세요.</p>
+        </article>
 
         <article class="card">
           <div class="card-head"><h3>항목별 관리</h3>
@@ -2857,6 +2977,10 @@
           x.owner = d.get('owner') || x.owner;
           x.memo = String(d.get('memo') || '').trim();
           setHistory(x.history, d.get('from') || app.month, d.get('amount'));
+          if (kind === 'saving') {
+            if (d.has('startBalance')) x.startBalance = num(d.get('startBalance'));
+            if (d.get('startMonth')) x.startMonth = String(d.get('startMonth')).slice(0, 7);
+          }
 
         } else if (kind === 'utility') {
           x.name = name;
@@ -3350,6 +3474,62 @@
                    '(정기소득·고정비·공과금·적금·예산·통장·카드·자동이체 교체)',
           pick: s => Object.fromEntries(FIELDS.map(([label, key]) => [label, s[key].length])),
           success: '기본값을 불러왔습니다. 자금 흐름도까지 새로 채웠습니다.'
+        }
+      );
+      return;
+    }
+
+    const wd = t.closest('[data-withdraw]');
+    if (wd) {
+      const id = wd.dataset.withdraw;
+      const sv = findEntity('saving', id);
+      if (!sv) return;
+      const bal = savingBalance(sv);
+      const raw = prompt(
+        `"${sv.name}"에서 얼마를 꺼내 쓰셨나요?\n\n` +
+        `지금 모인 돈 ${won(bal)}\n금액만 숫자로 적어주세요.`);
+      if (raw === null) return;
+      const amount = num(raw);
+      if (amount <= 0) { toast('금액을 올바르게 입력해주세요.'); return; }
+      const memo = prompt('어디에 쓰셨는지 적어두시겠습니까? (건너뛰려면 확인)') || '';
+      const wid = uid();
+      await mutate(
+        state => {
+          const x = findEntity('saving', id, state);
+          if (x) x.withdrawals.push({ id: wid, month: app.month, amount, memo: String(memo).trim() });
+        },
+        {
+          action: 'update', type: 'saving', id,
+          summary: `적금·저축 "${sv.name}"에서 ${won(amount)} 인출${memo ? ` (${memo})` : ''}`,
+          pick: s => {
+            const x = findEntity('saving', id, s);
+            return x ? { name: x.name, 모인돈: savingBalance(x) } : null;
+          },
+          success: '인출을 기록했습니다.'
+        }
+      );
+      return;
+    }
+
+    const delWd = t.closest('[data-del-withdraw]');
+    if (delWd) {
+      const id = delWd.dataset.delWithdraw;
+      const wid = delWd.dataset.wid;
+      const sv = findEntity('saving', id);
+      if (!sv || !confirm('이 인출 기록을 지울까요?')) return;
+      await mutate(
+        state => {
+          const x = findEntity('saving', id, state);
+          if (x) x.withdrawals = x.withdrawals.filter(w => w.id !== wid);
+        },
+        {
+          action: 'delete', type: 'saving', id,
+          summary: `적금·저축 "${sv.name}" 인출 기록 삭제`,
+          pick: s => {
+            const x = findEntity('saving', id, s);
+            return x ? { name: x.name, 모인돈: savingBalance(x) } : null;
+          },
+          success: '인출 기록을 지웠습니다.'
         }
       );
       return;
