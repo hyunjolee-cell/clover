@@ -798,3 +798,52 @@ select {
 .empty-cta p { font-size: 15px; font-weight: 600; color: var(--g700); }
 .empty-cta small { color: var(--g500); max-width: 34ch; }
 .empty-cta button { margin-top: 8px; min-width: 180px; }
+
+/* ============================================================================
+ * 눈에 먼저 들어와야 하는 것 — 기본값 불러오기 · 생활비 사용내역
+ * 색은 결정을 유도할 때만 쓴다는 규격에 맞춰, 이 둘에만 포인트 컬러를 준다.
+ * ========================================================================== */
+
+.seed-banner {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 20px;
+  background: var(--sky);
+  border: 2px solid var(--blue);
+  border-radius: var(--r-card);
+  box-shadow: 0 4px 14px rgba(59, 111, 224, .16);
+}
+.seed-text { flex: 1; min-width: 220px; }
+.seed-text b {
+  display: block;
+  font-size: 18px; font-weight: 800; color: var(--blue);
+  letter-spacing: -.03em; margin-bottom: 3px;
+}
+.seed-text span { display: block; color: var(--blue-deep); font-size: 13.5px; line-height: 1.55; }
+
+.seed-btn {
+  flex-shrink: 0; min-width: 140px; min-height: 50px;
+  background: var(--blue); color: #fff; border: none;
+  font-size: 16px; font-weight: 700;
+  box-shadow: 0 3px 10px rgba(38, 74, 153, .28);
+}
+.seed-btn:hover { background: var(--blue-dark); }
+
+.card.highlight {
+  border: 2px solid var(--blue);
+  box-shadow: 0 4px 14px rgba(59, 111, 224, .14);
+}
+h3.accent {
+  color: var(--blue); font-size: 19px; font-weight: 800; letter-spacing: -.03em;
+}
+.card.highlight .card-head small { color: var(--blue-deep); opacity: .8; }
+
+.accent-btn {
+  background: var(--blue); color: #fff; border: none;
+  font-weight: 700; min-height: 46px;
+  box-shadow: 0 3px 10px rgba(38, 74, 153, .24);
+}
+.accent-btn:hover { background: var(--blue-dark); }
+
+@media (max-width: 620px) {
+  .seed-btn { width: 100%; }
+}

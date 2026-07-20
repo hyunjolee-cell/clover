@@ -1145,6 +1145,38 @@
           ${monthNav()}
         </div>
 
+        <article class="card highlight">
+          <div class="card-head">
+            <div>
+              <h3 class="accent">생활비 사용내역</h3>
+              <small>가장 자주 쓰는 곳입니다</small>
+            </div>
+            <button class="accent-btn" type="button" data-add="transaction">내역 추가</button>
+          </div>
+
+          <div class="filter-bar">
+            <label class="field"><span>사용자</span>
+              <select data-tx-filter="owner">
+                <option value="">전체</option>
+                ${OWNERS.map(o => `<option ${filter.owner === o ? 'selected' : ''}>${o}</option>`).join('')}
+              </select></label>
+            <label class="field"><span>카테고리</span>
+              <select data-tx-filter="category">
+                <option value="">전체</option>
+                ${categories.map(c =>
+                  `<option ${filter.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+              </select></label>
+          </div>
+
+          <div class="totals">
+            <div><span>이 달 총 사용액</span><b>${won(monthSpend)}</b></div>
+            ${OWNERS.map(o =>
+              `<div><span>${o}</span><b>${won(spendByOwner(app.month, o))}</b></div>`).join('')}
+          </div>
+
+          <div class="list">${transactionRows()}</div>
+        </article>
+
         <article class="card">
           <div class="card-head">
             <h3>보너스·상여금</h3>
@@ -1176,35 +1208,6 @@
                 </form>`;
             }).join('') : emptyRow('공과금 항목이 없습니다. 설정 탭에서 추가해주세요.')}
           </div>
-        </article>
-
-        <article class="card">
-          <div class="card-head">
-            <h3>생활비 사용내역</h3>
-            <button class="secondary" type="button" data-add="transaction">추가</button>
-          </div>
-
-          <div class="filter-bar">
-            <label class="field"><span>사용자</span>
-              <select data-tx-filter="owner">
-                <option value="">전체</option>
-                ${OWNERS.map(o => `<option ${filter.owner === o ? 'selected' : ''}>${o}</option>`).join('')}
-              </select></label>
-            <label class="field"><span>카테고리</span>
-              <select data-tx-filter="category">
-                <option value="">전체</option>
-                ${categories.map(c =>
-                  `<option ${filter.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-              </select></label>
-          </div>
-
-          <div class="totals">
-            <div><span>이 달 총 사용액</span><b>${won(monthSpend)}</b></div>
-            ${OWNERS.map(o =>
-              `<div><span>${o}</span><b>${won(spendByOwner(app.month, o))}</b></div>`).join('')}
-          </div>
-
-          <div class="list">${transactionRows()}</div>
         </article>
 
         <datalist id="categoryList">
@@ -1512,6 +1515,16 @@
           ${monthNav()}
         </div>
 
+        <article class="seed-banner">
+          <div class="seed-text">
+            <b>기존 가계부 기본값 불러오기</b>
+            <span>정기소득 · 월 고정비 · 공과금 · 적금 · 생활비 예산과
+              통장 · 연동 카드 · 자동이체를 한 번에 채웁니다.
+              생활비 내역 · 보너스 · 자산 · 목표와 변경 로그는 그대로 둡니다.</span>
+          </div>
+          <button class="seed-btn" type="button" data-load-seed>불러오기</button>
+        </article>
+
         <div class="chip-tabs">
           ${groups.map(([k, t, l]) => `
             <button type="button" class="chip-tab ${k === active ? 'on' : ''}"
@@ -1532,14 +1545,6 @@
           <p class="note">항목을 누르면 펼쳐집니다. 금액을 바꾸면
             <b>적용 시작월</b>부터 반영되고 그 이전 달 금액은 그대로 남습니다.</p>
         </article>
-
-        <details class="card fold">
-          <summary>기존 가계부 기본값 불러오기</summary>
-          <p class="note">쓰시던 가계부(25.10)의 정기소득·월 고정비·공과금·적금·생활비 예산과
-            통장·연동 카드·자동이체를 한 번에 불러옵니다.
-            생활비 사용내역·보너스·자산·목표와 변경 로그는 그대로 둡니다.</p>
-          <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
-        </details>
 
         <article class="card">
           <div class="card-head"><h3>이 휴대폰</h3></div>
@@ -2172,9 +2177,10 @@
               toId: '', day: 1, amount: 0, memo: '' },
       asset: { id, name: '새 자산', kind: 'asset', category: '기타', owner: '공동',
                amount: 0, asOf: ymd(today()), memo: '' },
-      bonus: { id, name: '새 보너스', owner: app.space.actor,
+      // 부부가 함께 쓰는 돈이 대부분이므로 사용자는 공동을 기본으로 둔다
+      bonus: { id, name: '새 보너스', owner: '공동',
                date: defaultDate, amount: 0, memo: '' },
-      transaction: { id, date: defaultDate, owner: app.space.actor,
+      transaction: { id, date: defaultDate, owner: '공동',
                      category: '기타', place: '', amount: 0, memo: '' },
       scenario: { id, name: '새 시나리오', startMonth: app.month, months: 12,
                   annualReturn: 3, monthlyAdjustment: 0, savingIds: null,
@@ -2587,7 +2593,7 @@
       await mutate(
         state => {
           state.transactions.push({
-            id, date, owner: app.space.actor, category: '기타',
+            id, date, owner: '공동', category: '기타',
             place: '', amount: 0, memo: ''
           });
         },
@@ -2612,7 +2618,7 @@
       await mutate(
         state => {
           state.transactions.push({
-            id, date, owner: app.space.actor, category: '기타',
+            id, date, owner: '공동', category: '기타',
             place: '', amount: 0, memo: ''
           });
         },
