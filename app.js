@@ -566,9 +566,11 @@
   function savingBalance(sv, month = app.month) {
     let sum = num(sv.startBalance);
     const from = sv.startMonth;
-    if (String(month) >= String(from)) {
+    // 시작 잔액은 "그 달 시점에 모여 있던 돈"이다.
+    // 그 달 납입분은 이미 포함돼 있으므로 다음 달부터 더한다.
+    if (String(month) > String(from)) {
       const n = monthsBetween(from, month);
-      for (let i = 0; i <= n; i++) sum += historyValue(sv.history, shiftMonth(from, i));
+      for (let i = 1; i <= n; i++) sum += historyValue(sv.history, shiftMonth(from, i));
     }
     for (const w of sv.withdrawals) {
       if (String(w.month) <= String(month)) sum -= num(w.amount);
