@@ -1335,6 +1335,14 @@
         <p class="note lead-note">금액을 바꾸면 위에서 고른 <b>적용 시작월</b>부터 반영되고,
           그 이전 달의 금액은 그대로 유지됩니다.</p>
 
+        <article class="card">
+          <div class="card-head"><h3>기존 가계부 기본값</h3></div>
+          <p class="note">쓰시던 가계부(25.10)의 정기소득·월 고정비·공과금·적금·생활비 예산을
+            한 번에 불러옵니다. 불러온 뒤에도 항목마다 자유롭게 고치고 지울 수 있습니다.</p>
+          <p class="note">생활비 사용내역·보너스·자산·목표와 변경 로그는 건드리지 않습니다.</p>
+          <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
+        </article>
+
         ${groups.map(([kind, title, list, opts]) => `
           <article class="card">
             <div class="card-head"><h3>${title}</h3>
@@ -1915,6 +1923,49 @@
             return v === undefined ? null : { amount: v };
           },
           success: '실제 금액을 비웠습니다.'
+        }
+      );
+      return;
+    }
+
+    if (t.closest('[data-load-seed]')) {
+      const seed = seedState();
+      const counts = {
+        정기소득: seed.recurringIncomes.length, '월 고정비': seed.fixedCosts.length,
+        공과금: seed.utilities.length, '적금·저축': seed.savings.length,
+        '생활비 예산': seed.budgets.length
+      };
+      const now = {
+        정기소득: app.state.recurringIncomes.length, '월 고정비': app.state.fixedCosts.length,
+        공과금: app.state.utilities.length, '적금·저축': app.state.savings.length,
+        '생활비 예산': app.state.budgets.length
+      };
+      const hasAny = Object.values(now).some(n => n > 0);
+      if (!confirm(
+        `기존 가계부 기본값을 불러올까요?\n\n` +
+        Object.keys(counts).map(k => `· ${k} ${now[k]}건 → ${counts[k]}건`).join('\n') +
+        (hasAny ? `\n\n지금 등록된 위 항목은 기본값으로 바뀝니다.` : '') +
+        `\n생활비 내역·보너스·자산·목표와 변경 로그는 그대로 남습니다.`
+      )) return;
+
+      await mutate(
+        state => {
+          state.recurringIncomes = seed.recurringIncomes;
+          state.fixedCosts = seed.fixedCosts;
+          state.utilities = seed.utilities;
+          state.savings = seed.savings;
+          state.budgets = seed.budgets;
+          if (!state.scenarios.length) state.scenarios = seed.scenarios;
+        },
+        {
+          action: 'update', type: 'settings', id: null,
+          summary: '기존 가계부 기본값 불러오기 (정기소득·고정비·공과금·적금·예산 교체)',
+          pick: s => ({
+            정기소득: s.recurringIncomes.length, '월 고정비': s.fixedCosts.length,
+            공과금: s.utilities.length, '적금·저축': s.savings.length,
+            '생활비 예산': s.budgets.length
+          }),
+          success: '기본값을 불러왔습니다.'
         }
       );
       return;
