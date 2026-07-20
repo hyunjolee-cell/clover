@@ -113,7 +113,7 @@
 
   function emptyState() {
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       recurringIncomes: [],  // 정기소득
       fixedCosts: [],        // 월 고정비
       utilities: [],         // 공과금 항목(예상금액 이력)
@@ -124,6 +124,9 @@
       transactions: [],      // 생활비 사용내역 (사용일 기준)
       scenarios: [],         // 포캐스팅 시나리오
       goals: [],             // 자산 목표
+      accounts: [],          // 통장 — 자금 흐름도의 상자
+      cards: [],             // 통장에 연결된 신용카드
+      flows: [],             // 통장 사이 이체 규칙 — 흐름도의 화살표
       monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
     };
   }
@@ -134,31 +137,34 @@
   function seedState() {
     const s = emptyState();
     const h = amount => [{ from: currentMonth, amount }];
-    const income = (name, owner, amount) => ({ id: uid(), name, owner, history: h(amount) });
-    const util = (name, amount) => ({ id: uid(), name, estimateHistory: h(amount) });
+    const row = (name, owner, amount, memo = '') =>
+      ({ id: uid(), name, owner, memo, history: h(amount) });
+    const util = (name, amount, memo = '') =>
+      ({ id: uid(), name, memo, estimateHistory: h(amount) });
 
     s.recurringIncomes = [
-      income('이현조 월급', '현조', 5000000),
-      income('위신영 월급', '신영', 2830000),
-      income('기타소득', '공동', 130000)
+      row('이현조 월급', '현조', 5000000),
+      row('위신영 월급', '신영', 2830000),
+      row('기타소득', '공동', 130000, '월별 상이')
     ];
 
+    // 매달 같은 금액이 빠져나가는 항목
     s.fixedCosts = [
-      income('통신비 (인터넷·티비·유튜브)', '현조', 105000),
-      income('암보험', '현조', 140000),
-      income('실비보험', '현조', 109000),
-      income('자동차보험', '현조', 170000),
-      income('통신비', '신영', 28600),
-      income('유튜브 등 구독료', '신영', 14900),
-      income('실비보험', '신영', 50000),
-      income('암보험', '신영', 113755),
-      income('전세대출', '공동', 492600),
-      income('정수기', '공동', 38000),
-      income('TV 수신료', '공동', 2500)
+      row('통신비', '현조', 105000, '인터넷, 티비, 유튜브'),
+      row('암보험', '현조', 140000),
+      row('실비보험', '현조', 109000),
+      row('자동차보험', '현조', 170000),
+      row('통신비', '신영', 28600),
+      row('유튜브 등 구독료', '신영', 14900),
+      row('실비보험', '신영', 50000),
+      row('암보험', '신영', 113755),
+      row('전세대출', '공동', 492600, '주거비 · 월별 상이'),
+      row('정수기', '공동', 38000),
+      row('TV 수신료', '공동', 2500)
     ];
 
     s.utilities = [
-      util('전기세', 74263),
+      util('전기세', 74263, '월별 상이'),
       util('수도세', 12480),
       util('도시가스', 31030),
       util('관리비', 48000),
@@ -166,29 +172,60 @@
     ];
 
     s.savings = [
-      income('청년적금', '현조', 500000),
-      income('청년적금', '신영', 500000),
-      income('주택청약', '현조', 100000),
-      income('주택청약', '신영', 100000),
-      income('집마련적금', '공동', 2050000),
-      income('부모님적금', '공동', 500000),
-      income('비상금적금', '공동', 120000),
-      income('여행적금', '공동', 100000),
-      income('옷적금', '공동', 100000),
-      income('조카적금', '공동', 30000)
+      row('청년적금', '현조', 500000),
+      row('청년적금', '신영', 500000),
+      row('주택청약', '현조', 100000),
+      row('주택청약', '신영', 100000),
+      row('집마련적금', '공동', 2050000, '월별 상이, 기타 소득 발생 시 추가 = 유동저축'),
+      row('부모님적금', '공동', 500000),
+      row('비상금적금', '공동', 120000),
+      row('여행적금', '공동', 100000, '돈 남으면 넣기'),
+      row('옷적금', '공동', 100000, '돈 남으면 넣기'),
+      row('조카적금', '공동', 30000)
     ];
 
-    // 개인 생활비 중 보험·통신처럼 고정된 금액은 월 고정비로 옮겼고,
-    // 용돈·점심·교통비처럼 쓰는 만큼 달라지는 항목만 예산으로 잡았다.
+    // 쓰는 만큼 달라지는 항목은 시트의 소분류 그대로 나눠서 예산으로 잡는다.
     s.budgets = [
-      income('현조 생활비 (용돈·점심·미용·화장품·교통)', '현조', 876000),
-      income('신영 생활비 (용돈·점심·교통·미용)', '신영', 670000),
-      income('공동 생활비 (외식·생필품)', '공동', 750000)
+      row('용돈', '현조', 546000, '모임비 군대 3만, 상우 5만'),
+      row('점심', '현조', 150000),
+      row('미용실', '현조', 50000),
+      row('화장품', '현조', 50000, '스프레이, 왁스, 바디, 샴푸 등'),
+      row('교통비', '현조', 80000),
+      row('용돈', '신영', 400000),
+      row('점심', '신영', 150000),
+      row('교통비', '신영', 70000),
+      row('미용', '신영', 50000),
+      row('병원', '신영', 0),
+      row('외식 및 생필품', '공동', 750000, '공용 통장에 입금')
     ];
 
     // 보유 자산과 부채는 기존 가계부에 금액이 적혀 있지 않아 비워 둔다.
-    // 자산 탭에서 실제 잔액을 넣으면 순자산과 포캐스팅에 바로 반영된다.
     s.assets = [];
+
+    /* 통장과 이체 규칙 — 신영 통장관리 시트(25.11) 구조를 그대로 옮겼다.
+       자금 흐름 탭에서 화살표로 그려진다. */
+    const acc = (name, owner, kind, memo = '') => ({ id: uid(), name, owner, kind, memo });
+    const salary = acc('신영 월급통장', '신영', 'salary', '수입이 들어오는 통장');
+    const personal = acc('신영 개인통장', '신영', 'spending', '생활비 사용');
+    const shared = acc('공용 통장 (공카)', '공동', 'shared', '주거비·공과금');
+    const bank = acc('케이뱅크', '공동', 'saving', '적금 모음');
+    s.accounts = [salary, personal, shared, bank];
+
+    s.cards = [
+      { id: uid(), name: '국민카드', accountId: personal.id, memo: '개인 생활비 결제' },
+      { id: uid(), name: '삼성카드', accountId: shared.id, memo: '공과금·통신·보험 결제' }
+    ];
+
+    const flow = (name, fromId, toId, day, amount, memo = '') =>
+      ({ id: uid(), name, fromId, toId, day, amount, memo });
+    s.flows = [
+      flow('생활비 이체', salary.id, personal.id, 26, 670000, '용돈·점심·교통·미용'),
+      flow('공용통장 이체', salary.id, shared.id, 30, 856000, '전세대출·관리비·TV수신료·삼성카드'),
+      flow('적금통장 이체', salary.id, bank.id, 27, 650000, '경조사·부모님·조카·비상금·여행·옷'),
+      flow('청년적금 납입', salary.id, '', 25, 500000, ''),
+      flow('주택청약 납입', salary.id, '', 1, 100000, ''),
+      flow('실비보험 납부', salary.id, '', 5, 50000, '')
+    ];
 
     s.scenarios = [{
       id: uid(), name: '1년 계획', startMonth: currentMonth, months: 12,
@@ -203,10 +240,11 @@
   /* 과거 버전 데이터와 결측 필드를 안전하게 보정 */
   function migrate(raw) {
     const s = Object.assign(emptyState(), raw && typeof raw === 'object' ? clone(raw) : {});
-    s.schemaVersion = 3;
+    s.schemaVersion = 4;
 
     for (const key of ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'assets',
-                       'budgets', 'bonuses', 'transactions', 'scenarios', 'goals']) {
+                       'budgets', 'bonuses', 'transactions', 'scenarios', 'goals',
+                       'accounts', 'cards', 'flows']) {
       if (!Array.isArray(s[key])) s[key] = [];
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
@@ -220,30 +258,38 @@
         .sort((a, b) => a.from.localeCompare(b.from));
     };
 
-    for (const x of s.recurringIncomes) {
-      x.id ||= uid(); x.name ||= '이름 없음';
-      if (!OWNERS.includes(x.owner)) x.owner = '공동';
-      fixHistory(x, 'history');
-    }
-    for (const x of s.fixedCosts) {
-      x.id ||= uid(); x.name ||= '이름 없음';
-      if (!OWNERS.includes(x.owner)) x.owner = '공동';
-      fixHistory(x, 'history');
+    for (const key of ['recurringIncomes', 'fixedCosts', 'savings', 'budgets']) {
+      for (const x of s[key]) {
+        x.id ||= uid(); x.name ||= '이름 없음';
+        if (!OWNERS.includes(x.owner)) x.owner = '공동';
+        x.memo ||= '';
+        fixHistory(x, 'history');
+      }
     }
     for (const x of s.utilities) {
       x.id ||= uid(); x.name ||= '이름 없음';
+      x.memo ||= '';
       fixHistory(x, 'estimateHistory');
       delete x.estimate;
     }
-    for (const x of s.savings) {
-      x.id ||= uid(); x.name ||= '이름 없음';
+    for (const x of s.accounts) {
+      x.id ||= uid(); x.name ||= '이름 없는 통장';
       if (!OWNERS.includes(x.owner)) x.owner = '공동';
-      fixHistory(x, 'history');
+      if (!['salary', 'spending', 'shared', 'saving'].includes(x.kind)) x.kind = 'spending';
+      x.memo ||= '';
     }
-    for (const x of s.budgets) {
-      x.id ||= uid(); x.name ||= '이름 없음';
-      if (!OWNERS.includes(x.owner)) x.owner = '공동';
-      fixHistory(x, 'history');
+    for (const x of s.cards) {
+      x.id ||= uid(); x.name ||= '카드';
+      x.accountId ||= '';
+      x.memo ||= '';
+    }
+    for (const x of s.flows) {
+      x.id ||= uid(); x.name ||= '이체';
+      x.fromId ||= '';
+      x.toId ||= '';
+      x.day = Math.min(31, Math.max(1, num(x.day) || 1));
+      x.amount = num(x.amount);
+      x.memo ||= '';
     }
     for (const x of s.assets) {
       x.id ||= uid(); x.name ||= '이름 없음';
@@ -327,6 +373,7 @@
     authMode: 'login',     // login | signup
     tab: 'home',
     month: currentMonth,
+    selectedDate: '',      // 달력에서 고른 날짜
     sync: '준비 중',
     syncTone: 'idle',      // idle | ok | busy | warn | error
     logs: [],
@@ -713,7 +760,8 @@
     utility: '공과금 항목', utilityActual: '공과금 실제금액', saving: '적금·저축',
     asset: '자산·부채', budget: '생활비 예산', transaction: '생활비 내역',
     scenario: '포캐스팅 시나리오', goal: '자산 목표', settings: '설정',
-    space: '공유공간', device: '기기'
+    space: '공유공간', device: '기기',
+    account: '통장', card: '연동 카드', flow: '자동이체'
   };
   const ACTION_LABEL = {
     create: '추가', update: '수정', delete: '삭제', connect: '접속', system: '시스템'
@@ -725,14 +773,16 @@
     annualReturn: '연 기대수익률(%)', monthlyAdjustment: '월 추가 저축·조정액',
     startMonth: '기준 시작월', history: '금액 이력', estimateHistory: '예상금액 이력',
     includeBonus: '보너스 포함', goalId: '연결 목표', scenarioId: '연결 시나리오',
-    savingIds: '포함 적금', assetIds: '포함 자산', debtIds: '포함 부채', actor: '사용자'
+    savingIds: '포함 적금', assetIds: '포함 자산', debtIds: '포함 부채', actor: '사용자',
+    day: '이체일', fromId: '출금 통장', toId: '입금 통장', accountId: '연결 통장'
   };
 
   const listOf = (kind, state = app.state) => ({
     income: state.recurringIncomes, fixed: state.fixedCosts, utility: state.utilities,
     saving: state.savings, asset: state.assets, budget: state.budgets,
     bonus: state.bonuses, transaction: state.transactions,
-    scenario: state.scenarios, goal: state.goals
+    scenario: state.scenarios, goal: state.goals,
+    account: state.accounts, card: state.cards, flow: state.flows
   }[kind] || null);
 
   const findEntity = (kind, id, state = app.state) =>
@@ -1080,6 +1130,8 @@
             <input name="from" type="month" value="${esc(applied)}"></label>
           <label class="field"><span>${opts.amountLabel || '월 금액'}</span>
             <input name="amount" inputmode="numeric" value="${value}"></label>
+          <label class="field wide"><span>메모</span>
+            <input name="memo" value="${esc(x.memo || '')}" placeholder="비고를 적어두면 나중에 도움이 됩니다"></label>
           <div class="item-actions">
             <button class="secondary" type="submit">수정 저장</button>
             <button class="danger" type="button" data-delete="${kind}" data-id="${x.id}">삭제</button>
@@ -1399,6 +1451,352 @@
       </section>`;
   }
 
+  /* --- 15-A. 화면: 달력 --------------------------------------------------- */
+
+  /* 그 달에 실제로 돈이 오간 날을 한눈에 보기 위한 화면.
+     수입(보너스)·지출(생활비)·자동이체를 날짜별로 모은다. */
+  function dayEvents(month) {
+    const map = {};
+    const put = (date, ev) => { (map[date] ||= []).push(ev); };
+
+    for (const b of app.state.bonuses) {
+      if (monthOf(b.date) === month)
+        put(b.date, { type: 'income', name: b.name, owner: b.owner, amount: num(b.amount), id: b.id });
+    }
+    for (const t of app.state.transactions) {
+      if (monthOf(t.date) === month)
+        put(t.date, {
+          type: 'spend', name: t.place || t.category, owner: t.owner,
+          amount: num(t.amount), memo: t.category, id: t.id
+        });
+    }
+    // 자동이체는 매달 같은 날 반복되므로 보고 있는 달에 맞춰 날짜를 만든다
+    const [y, m] = month.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    for (const f of app.state.flows) {
+      const day = Math.min(num(f.day) || 1, last);
+      put(`${month}-${pad(day)}`, {
+        type: 'transfer', name: f.name, amount: num(f.amount), id: f.id,
+        memo: accountName(f.fromId) + (f.toId ? ` → ${accountName(f.toId)}` : '')
+      });
+    }
+    return map;
+  }
+
+  const accountName = id => app.state.accounts.find(a => a.id === id)?.name || '';
+
+  function calendarView() {
+    const [y, m] = app.month.split('-').map(Number);
+    const first = new Date(y, m - 1, 1);
+    const last = new Date(y, m, 0).getDate();
+    const lead = first.getDay();                    // 그 달 1일의 요일
+    const events = dayEvents(app.month);
+    const selected = app.selectedDate && monthOf(app.selectedDate) === app.month
+      ? app.selectedDate : '';
+
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell empty"></div>');
+    for (let d = 1; d <= last; d++) {
+      const date = `${app.month}-${pad(d)}`;
+      const list = events[date] || [];
+      const income = list.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+      const spend = list.filter(e => e.type === 'spend').reduce((s, e) => s + e.amount, 0);
+      const transfer = list.filter(e => e.type === 'transfer').length;
+      const isToday = date === ymd(today());
+      const dow = (lead + d - 1) % 7;
+      cells.push(`
+        <button type="button" class="cal-cell${selected === date ? ' on' : ''}${isToday ? ' today' : ''}"
+                data-pick-date="${date}">
+          <span class="cal-day${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}">${d}</span>
+          ${income ? `<span class="cal-amt in">+${Math.round(income / 10000)}만</span>` : ''}
+          ${spend ? `<span class="cal-amt out">-${spend >= 10000
+            ? `${Math.round(spend / 10000)}만` : spend.toLocaleString('ko-KR')}</span>` : ''}
+          ${transfer ? `<span class="cal-dot" title="자동이체 ${transfer}건"></span>` : ''}
+        </button>`);
+    }
+
+    const s = summary();
+    const detail = selected ? (events[selected] || []) : [];
+
+    return `
+      <section class="page">
+        <div class="page-head">
+          <div><span class="eyebrow">달력</span><h2>${monthLabel(app.month)}</h2></div>
+          ${monthNav()}
+        </div>
+
+        <div class="grid three">
+          <article class="card metric"><small>이 달 수입</small>
+            <strong>${won(s.income)}</strong>
+            <small>정기 ${won(s.base)} + 보너스 ${won(s.bonus)}</small></article>
+          <article class="card metric"><small>이 달 생활비 사용</small>
+            <strong class="minus">${won(s.spend)}</strong>
+            <small>${transactionsOf(app.month).length}건</small></article>
+          <article class="card metric"><small>고정 지출·저축</small>
+            <strong class="minus">${won(s.fixed + s.utility + s.saving)}</strong>
+            <small>고정비·공과금·적금</small></article>
+        </div>
+
+        <article class="card">
+          <div class="card-head"><h3>날짜별 수입·지출</h3>
+            <span class="note">날짜를 누르면 그날 내역이 보입니다</span></div>
+          <div class="cal-head">
+            ${['일', '월', '화', '수', '목', '금', '토'].map((w, i) =>
+              `<span class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</span>`).join('')}
+          </div>
+          <div class="cal-grid">${cells.join('')}</div>
+          <div class="cal-legend">
+            <span><i class="dot in"></i>수입</span>
+            <span><i class="dot out"></i>생활비 지출</span>
+            <span><i class="dot tr"></i>자동이체</span>
+          </div>
+        </article>
+
+        ${selected ? `
+          <article class="card">
+            <div class="card-head">
+              <h3>${Number(selected.slice(8))}일 내역</h3>
+              <button class="secondary" type="button" data-add-on-date="${selected}">
+                이 날짜로 지출 추가
+              </button>
+            </div>
+            ${detail.length ? `<div class="day-list">${detail.map(e => `
+              <div class="day-item ${e.type}">
+                <div>
+                  <b>${esc(e.name)}</b>
+                  ${e.owner ? `<span class="tag">${esc(e.owner)}</span>` : ''}
+                  ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}
+                </div>
+                <b class="${e.type === 'income' ? 'plus' : 'minus'}">
+                  ${e.type === 'income' ? '+' : '-'}${won(e.amount)}</b>
+              </div>`).join('')}</div>` : emptyRow('이 날짜에는 기록이 없습니다.')}
+          </article>` : ''}
+      </section>`;
+  }
+
+  /* --- 15-B. 화면: 자금 흐름도 -------------------------------------------- */
+
+  const ACCOUNT_KIND = {
+    salary: { label: '월급 통장', icon: '💰' },
+    spending: { label: '생활비 통장', icon: '🏦' },
+    shared: { label: '공용 통장', icon: '🏠' },
+    saving: { label: '저축 통장', icon: '🐖' }
+  };
+
+  function flowDiagram() {
+    const accounts = app.state.accounts;
+    if (!accounts.length)
+      return emptyRow('통장을 추가하면 돈의 흐름이 그림으로 그려집니다.');
+
+    const sources = accounts.filter(a => a.kind === 'salary');
+    const roots = sources.length ? sources : [accounts[0]];
+
+    const cardsOf = id => app.state.cards.filter(c => c.accountId === id);
+    const outgoing = id => app.state.flows
+      .filter(f => f.fromId === id)
+      .sort((a, b) => num(a.day) - num(b.day));
+
+    const box = (acc, total) => {
+      const meta = ACCOUNT_KIND[acc.kind] || ACCOUNT_KIND.spending;
+      const cards = cardsOf(acc.id);
+      return `
+        <div class="flow-box ${acc.kind}">
+          <div class="flow-box-head">
+            <span class="flow-icon">${meta.icon}</span>
+            <div>
+              <b>${esc(acc.name)}</b>
+              <small>${meta.label} · ${esc(acc.owner)}</small>
+            </div>
+            ${total ? `<span class="flow-total">${won(total)}</span>` : ''}
+          </div>
+          ${cards.length ? `<div class="flow-cards">${cards.map(c =>
+            `<span class="chip">💳 ${esc(c.name)}</span>`).join('')}</div>` : ''}
+          ${acc.memo ? `<small class="flow-memo">${esc(acc.memo)}</small>` : ''}
+        </div>`;
+    };
+
+    const branch = f => {
+      const target = app.state.accounts.find(a => a.id === f.toId);
+      return `
+        <div class="flow-branch">
+          <div class="flow-arrow">
+            <span class="flow-day">매월 ${num(f.day)}일</span>
+            <span class="arrow-line"><i></i></span>
+            <span class="flow-amount">${won(f.amount)}</span>
+          </div>
+          <div class="flow-target">
+            ${target ? box(target, outgoing(target.id).reduce((s, x) => s + num(x.amount), 0))
+                     : `<div class="flow-box leaf">
+                          <div class="flow-box-head">
+                            <span class="flow-icon">📥</span>
+                            <div><b>${esc(f.name)}</b><small>바로 납입</small></div>
+                          </div>
+                        </div>`}
+            ${f.memo ? `<small class="flow-memo">${esc(f.memo)}</small>` : ''}
+          </div>
+        </div>`;
+    };
+
+    return roots.map(root => {
+      const outs = outgoing(root.id);
+      const total = outs.reduce((s, f) => s + num(f.amount), 0);
+      const inflow = app.state.recurringIncomes
+        .filter(i => i.owner === root.owner || root.owner === '공동')
+        .reduce((s, i) => s + historyValue(i.history, app.month), 0);
+      return `
+        <div class="flow-tree">
+          ${inflow ? `<div class="flow-inflow">월 수입 ${won(inflow)} 입금</div>
+            <div class="flow-arrow down"><span class="arrow-line vertical"><i></i></span></div>` : ''}
+          ${box(root, total)}
+          <div class="flow-children">${outs.map(branch).join('')}</div>
+          ${outs.length ? `<p class="note flow-sum">
+            이 통장에서 매달 나가는 돈 합계 <b>${won(total)}</b></p>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function accountRows() {
+    if (!app.state.accounts.length) return emptyRow('등록된 통장이 없습니다.');
+    return app.state.accounts.map(a => `
+      <form class="item" data-row="account" data-id="${a.id}">
+        <label class="field"><span>통장 이름</span>
+          <input name="name" value="${esc(a.name)}"></label>
+        <label class="field"><span>용도</span>
+          <select name="accountKind">
+            ${Object.entries(ACCOUNT_KIND).map(([k, v]) =>
+              `<option value="${k}" ${a.kind === k ? 'selected' : ''}>${v.label}</option>`).join('')}
+          </select></label>
+        <label class="field"><span>소유자</span>${ownerSelect('owner', a.owner)}</label>
+        <label class="field wide"><span>메모</span>
+          <input name="memo" value="${esc(a.memo || '')}"></label>
+        <div class="item-actions">
+          <button class="secondary" type="submit">수정 저장</button>
+          <button class="danger" type="button" data-delete="account" data-id="${a.id}">삭제</button>
+        </div>
+      </form>`).join('');
+  }
+
+  const accountSelect = (name, value, blankLabel) => `
+    <select name="${name}">
+      ${blankLabel ? `<option value="">${blankLabel}</option>` : ''}
+      ${app.state.accounts.map(a =>
+        `<option value="${a.id}" ${value === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}
+    </select>`;
+
+  function cardRows() {
+    if (!app.state.cards.length) return emptyRow('등록된 카드가 없습니다.');
+    return app.state.cards.map(c => `
+      <form class="item" data-row="card" data-id="${c.id}">
+        <label class="field"><span>카드 이름</span>
+          <input name="name" value="${esc(c.name)}"></label>
+        <label class="field"><span>결제 통장</span>
+          ${accountSelect('accountId', c.accountId, '선택 안 함')}</label>
+        <label class="field wide"><span>메모</span>
+          <input name="memo" value="${esc(c.memo || '')}"></label>
+        <div class="item-actions">
+          <button class="secondary" type="submit">수정 저장</button>
+          <button class="danger" type="button" data-delete="card" data-id="${c.id}">삭제</button>
+        </div>
+      </form>`).join('');
+  }
+
+  function flowRows() {
+    if (!app.state.flows.length) return emptyRow('등록된 자동이체가 없습니다.');
+    return [...app.state.flows].sort((a, b) => num(a.day) - num(b.day)).map(f => `
+      <form class="item" data-row="flow" data-id="${f.id}">
+        <label class="field"><span>이체 이름</span>
+          <input name="name" value="${esc(f.name)}"></label>
+        <label class="field"><span>이체일</span>
+          <input name="day" inputmode="numeric" value="${num(f.day)}"></label>
+        <label class="field"><span>출금 통장</span>
+          ${accountSelect('fromId', f.fromId, '선택 안 함')}</label>
+        <label class="field"><span>입금 통장</span>
+          ${accountSelect('toId', f.toId, '통장 아님 (바로 납입)')}</label>
+        <label class="field"><span>금액</span>
+          <input name="amount" inputmode="numeric" value="${num(f.amount)}"></label>
+        <label class="field wide"><span>메모</span>
+          <input name="memo" value="${esc(f.memo || '')}"></label>
+        <div class="item-actions">
+          <button class="secondary" type="submit">수정 저장</button>
+          <button class="danger" type="button" data-delete="flow" data-id="${f.id}">삭제</button>
+        </div>
+      </form>`).join('');
+  }
+
+  function flowView() {
+    const totalOut = app.state.flows.reduce((s, f) => s + num(f.amount), 0);
+    return `
+      <section class="page">
+        <div class="page-head">
+          <div><span class="eyebrow">자금 흐름</span><h2>돈이 어디로 가는가</h2></div>
+        </div>
+
+        <article class="card">
+          <div class="card-head"><h3>흐름도</h3>
+            <span class="note">매달 자동이체 합계 ${won(totalOut)}</span></div>
+          <div class="flow-canvas">${flowDiagram()}</div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>통장</h3>
+            <button class="secondary" type="button" data-add="account">통장 추가</button></div>
+          <div class="list">${accountRows()}</div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>연동 카드</h3>
+            <button class="secondary" type="button" data-add="card">카드 추가</button></div>
+          <div class="list">${cardRows()}</div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>자동이체</h3>
+            <button class="secondary" type="button" data-add="flow">이체 추가</button></div>
+          <div class="list">${flowRows()}</div>
+        </article>
+      </section>`;
+  }
+
+  /* --- 15-C. 화면: 더보기 -------------------------------------------------- */
+
+  function moreView() {
+    const items = [
+      ['forecast', '📈', '자산 포캐스팅', '시나리오별 예상 순자산과 목표 달성 시점'],
+      ['flow', '🔀', '자금 흐름', '통장·카드·자동이체를 흐름도로 확인'],
+      ['settings', '⚙️', '항목 설정', '정기소득·고정비·공과금·적금·예산 관리'],
+      ['logs', '📝', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록']
+    ];
+    return `
+      <section class="page">
+        <div class="page-head">
+          <div><span class="eyebrow">더보기</span><h2>${esc(app.space.name || '우리집')}</h2></div>
+        </div>
+
+        <div class="menu-list">
+          ${items.map(([tab, icon, title, desc]) => `
+            <button type="button" class="menu-item" data-tab="${tab}">
+              <span class="menu-icon">${icon}</span>
+              <span class="menu-text"><b>${title}</b><small>${desc}</small></span>
+              <span class="menu-arrow">›</span>
+            </button>`).join('')}
+        </div>
+
+        <article class="card">
+          <div class="card-head"><h3>이 휴대폰</h3></div>
+          <div class="summary-rows">
+            <div><span>사용자</span><b>${esc(app.space.actor)}</b></div>
+            <div><span>계정</span><b>${esc(app.session?.user?.email || '')}</b></div>
+            <div><span>공유공간</span><b>${esc(app.space.code)}</b></div>
+            <div><span>동기화</span><b>${esc(app.sync)}</b></div>
+          </div>
+          <div class="row wrap">
+            <button class="secondary" type="button" data-manual-sync>수동 동기화</button>
+            <button class="danger" type="button" data-signout>로그아웃</button>
+          </div>
+        </article>
+      </section>`;
+  }
+
   /* --- 16. 화면: 변경 로그 ------------------------------------------------ */
 
   // 변경 전과 후의 항목 순서를 같게 맞춘다. 순서가 다르면 눈으로 비교하기 어렵다.
@@ -1505,20 +1903,32 @@
   /* --- 17. 셸 ------------------------------------------------------------- */
 
   function appShell() {
+    // 하단은 자주 쓰는 5개만 둔다. 나머지는 더보기에서 들어간다.
     const tabs = [
-      ['home', '홈'], ['monthly', '월별'], ['assets', '자산'],
-      ['forecast', '예측'], ['settings', '설정'], ['logs', '로그']
+      ['home', '🏠', '홈'], ['calendar', '📅', '달력'], ['monthly', '✏️', '입력'],
+      ['assets', '💎', '자산'], ['more', '☰', '더보기']
     ];
-    const content = {
-      home: homeView, monthly: monthlyView, assets: assetsView,
-      forecast: forecastView, settings: settingsView, logs: logsView
-    }[app.tab]();
+    const views = {
+      home: homeView, calendar: calendarView, monthly: monthlyView, assets: assetsView,
+      forecast: forecastView, flow: flowView, settings: settingsView,
+      logs: logsView, more: moreView
+    };
+    const content = (views[app.tab] || homeView)();
+
+    // 더보기 안쪽 화면에서는 돌아갈 곳을 알려준다
+    const sub = ['forecast', 'flow', 'settings', 'logs'].includes(app.tab);
+    const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름',
+                       settings: '항목 설정', logs: '변경 로그' }[app.tab];
 
     return `
       <div class="app">
         <header class="topbar">
-          <div class="brand"><span class="mark">🍀</span>
-            <div><b>CLOVER</b><small>${esc(app.space.name || '우리집')}</small></div></div>
+          <div class="brand">
+            ${sub ? `<button class="back" type="button" data-tab="more" aria-label="뒤로">‹</button>`
+                  : `<span class="mark">🍀</span>`}
+            <div><b>${sub ? esc(subTitle) : 'CLOVER'}</b>
+              <small>${esc(app.space.name || '우리집')}</small></div>
+          </div>
           <div class="status">
             <span class="sync sync-${app.syncTone}">${esc(app.sync)}</span>
             <span class="badge">${esc(app.space.actor)}</span>
@@ -1531,10 +1941,17 @@
 
         ${content}
 
+        ${['home', 'calendar', 'monthly'].includes(app.tab)
+          ? `<button class="fab" type="button" data-quick-add aria-label="지출 빠른 입력">＋</button>`
+          : ''}
+
         <nav class="bottom-nav">
-          ${tabs.map(([k, t]) =>
-            `<button type="button" data-tab="${k}"
-                     class="${app.tab === k ? 'active' : ''}">${t}</button>`).join('')}
+          ${tabs.map(([k, icon, t]) => {
+            const on = app.tab === k ||
+              (k === 'more' && ['forecast', 'flow', 'settings', 'logs'].includes(app.tab));
+            return `<button type="button" data-tab="${k}" class="${on ? 'active' : ''}">
+              <span class="nav-icon">${icon}</span><span>${t}</span></button>`;
+          }).join('')}
         </nav>
         <div id="toast" class="toast" role="status"></div>
       </div>`;
@@ -1572,11 +1989,15 @@
       : '01';
     const defaultDate = `${app.month}-${defaultDay}`;
     const map = {
-      income: { id, name: '새 정기소득', owner: '공동', history: h },
-      fixed: { id, name: '새 고정비', owner: '공동', history: h },
-      utility: { id, name: '새 공과금', estimateHistory: h },
-      saving: { id, name: '새 적금', owner: '공동', history: h },
-      budget: { id, name: '새 예산', owner: '공동', history: h },
+      income: { id, name: '새 정기소득', owner: '공동', memo: '', history: h },
+      fixed: { id, name: '새 고정비', owner: '공동', memo: '', history: h },
+      utility: { id, name: '새 공과금', memo: '', estimateHistory: h },
+      saving: { id, name: '새 적금', owner: '공동', memo: '', history: h },
+      budget: { id, name: '새 예산', owner: '공동', memo: '', history: h },
+      account: { id, name: '새 통장', owner: '공동', kind: 'spending', memo: '' },
+      card: { id, name: '새 카드', accountId: app.state.accounts[0]?.id || '', memo: '' },
+      flow: { id, name: '새 자동이체', fromId: app.state.accounts[0]?.id || '',
+              toId: '', day: 1, amount: 0, memo: '' },
       asset: { id, name: '새 자산', kind: 'asset', category: '기타', owner: '공동',
                amount: 0, asOf: ymd(today()), memo: '' },
       bonus: { id, name: '새 보너스', owner: app.space.actor,
@@ -1672,11 +2093,32 @@
         if (['income', 'fixed', 'saving', 'budget'].includes(kind)) {
           x.name = name;
           x.owner = d.get('owner') || x.owner;
+          x.memo = String(d.get('memo') || '').trim();
           setHistory(x.history, d.get('from') || app.month, d.get('amount'));
 
         } else if (kind === 'utility') {
           x.name = name;
+          x.memo = String(d.get('memo') || '').trim();
           setHistory(x.estimateHistory, d.get('from') || app.month, d.get('amount'));
+
+        } else if (kind === 'account') {
+          x.name = name;
+          x.owner = d.get('owner') || x.owner;
+          x.kind = d.get('accountKind') || x.kind;
+          x.memo = String(d.get('memo') || '').trim();
+
+        } else if (kind === 'card') {
+          x.name = name;
+          x.accountId = d.get('accountId') || '';
+          x.memo = String(d.get('memo') || '').trim();
+
+        } else if (kind === 'flow') {
+          x.name = name;
+          x.fromId = d.get('fromId') || '';
+          x.toId = d.get('toId') || '';
+          x.day = Math.min(31, Math.max(1, num(d.get('day'))));
+          x.amount = num(d.get('amount'));
+          x.memo = String(d.get('memo') || '').trim();
 
         } else if (kind === 'asset') {
           x.name = name;
@@ -1899,6 +2341,66 @@
     if (shift) { app.month = shiftMonth(app.month, num(shift.dataset.shift)); render(); return; }
 
     if (t.closest('[data-apply-live]')) { render(); return; }
+
+    const pickDate = t.closest('[data-pick-date]');
+    if (pickDate) {
+      const date = pickDate.dataset.pickDate;
+      app.selectedDate = app.selectedDate === date ? '' : date;
+      render();
+      return;
+    }
+
+    // 달력에서 고른 날짜로 지출을 바로 추가한다
+    const onDate = t.closest('[data-add-on-date]');
+    if (onDate) {
+      const date = onDate.dataset.addOnDate;
+      const id = uid();
+      await mutate(
+        state => {
+          state.transactions.push({
+            id, date, owner: app.space.actor, category: '기타',
+            place: '', amount: 0, memo: ''
+          });
+        },
+        {
+          action: 'create', type: 'transaction', id,
+          summary: `생활비 내역 ${date} 추가`,
+          pick: s => findEntity('transaction', id, s),
+          success: '내역을 추가했습니다. 입력 탭에서 금액을 채워주세요.'
+        }
+      );
+      app.tab = 'monthly';
+      render();
+      return;
+    }
+
+    // 어느 화면에서든 오늘 날짜로 지출 한 줄을 바로 만든다
+    if (t.closest('[data-quick-add]')) {
+      const id = uid();
+      const date = app.selectedDate && monthOf(app.selectedDate) === app.month
+        ? app.selectedDate
+        : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
+      await mutate(
+        state => {
+          state.transactions.push({
+            id, date, owner: app.space.actor, category: '기타',
+            place: '', amount: 0, memo: ''
+          });
+        },
+        {
+          action: 'create', type: 'transaction', id,
+          summary: `생활비 내역 ${date} 추가`,
+          pick: s => findEntity('transaction', id, s),
+          success: '내역을 추가했습니다. 금액을 채워주세요.'
+        }
+      );
+      app.tab = 'monthly';
+      render();
+      const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      row?.querySelector('input[name="place"]')?.focus();
+      return;
+    }
 
     const add = t.closest('[data-add]');
     if (add) { await addEntity(add.dataset.add); return; }

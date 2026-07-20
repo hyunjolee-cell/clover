@@ -504,3 +504,214 @@ button.tiny { min-height: 34px; padding: 0 12px; font-size: 13px; flex-shrink: 0
   :root { color-scheme: light only; }
   html, body { background: var(--bg); color: var(--text); }
 }
+
+/* ============================================================================
+ * 달력 · 자금 흐름도 · 더보기 — 고도화 화면
+ * ========================================================================== */
+
+/* --- 하단 네비 (아이콘 + 글자) ------------------------------------------- */
+
+.bottom-nav { grid-template-columns: repeat(5, 1fr); }
+.bottom-nav button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-height: 54px; font-size: 11.5px;
+}
+.nav-icon { font-size: 19px; line-height: 1.1; }
+
+.topbar .back {
+  min-height: 36px; width: 32px; padding: 0;
+  background: rgba(255, 255, 255, .18); border: none; color: #fff;
+  font-size: 22px; line-height: 1; border-radius: 9px;
+}
+
+/* --- 빠른 입력 버튼 ------------------------------------------------------- */
+
+.fab {
+  position: fixed; right: 18px; z-index: 40;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  width: 58px; height: 58px; min-height: 58px; padding: 0;
+  border-radius: 50%; border: none;
+  background: var(--brand); color: #fff;
+  font-size: 30px; line-height: 1; font-weight: 400;
+  box-shadow: 0 6px 20px rgba(47, 143, 91, .38);
+}
+.fab:hover { background: var(--brand-strong); }
+
+/* --- 달력 ---------------------------------------------------------------- */
+
+.cal-head {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 4px; margin-bottom: 6px;
+}
+.cal-head span {
+  text-align: center; font-size: 12.5px; font-weight: 700; color: var(--text-soft);
+  padding: 4px 0;
+}
+.cal-head .sun, .cal-day.sun { color: #d9534f; }
+.cal-head .sat, .cal-day.sat { color: #2563eb; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+
+.cal-cell {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-height: 62px; padding: 6px 2px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit; cursor: pointer;
+}
+.cal-cell.empty { background: transparent; border-color: transparent; cursor: default; }
+.cal-cell.today { border-color: var(--brand); }
+.cal-cell.on { background: var(--brand-soft); border-color: var(--brand); }
+.cal-cell:hover:not(.empty) { border-color: var(--line-firm); }
+
+.cal-day { font-size: 13px; font-weight: 700; color: var(--text); }
+.cal-amt {
+  font-size: 10.5px; font-weight: 700; line-height: 1.25;
+  white-space: nowrap;
+}
+.cal-amt.in { color: var(--brand-strong); }
+.cal-amt.out { color: var(--danger); }
+.cal-dot {
+  position: absolute; bottom: 5px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+
+.cal-legend {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px; color: var(--text-soft);
+}
+.cal-legend span { display: flex; align-items: center; gap: 6px; }
+.cal-legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.cal-legend .dot.in { background: var(--brand); }
+.cal-legend .dot.out { background: var(--danger); }
+.cal-legend .dot.tr { background: var(--accent); }
+
+.day-list { display: grid; gap: 9px; }
+.day-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-firm);
+  border-radius: var(--radius-sm);
+}
+.day-item.income { border-left-color: var(--brand); }
+.day-item.spend { border-left-color: var(--danger); }
+.day-item.transfer { border-left-color: var(--accent); }
+.day-item small { display: block; color: var(--text-muted); font-size: 12.5px; }
+.day-item .tag { margin-left: 6px; }
+
+/* --- 자금 흐름도 ---------------------------------------------------------- */
+
+.flow-canvas { display: grid; gap: 26px; }
+.flow-tree { display: grid; gap: 0; justify-items: stretch; }
+
+.flow-inflow {
+  justify-self: center;
+  background: var(--brand-soft); color: var(--brand-strong);
+  border: 1px solid #cfe7da; border-radius: 999px;
+  padding: 7px 16px; font-size: 14px; font-weight: 700;
+}
+
+.flow-box {
+  background: var(--surface);
+  border: 2px solid var(--line-firm);
+  border-radius: var(--radius);
+  padding: 14px 15px;
+  box-shadow: var(--shadow);
+}
+.flow-box.salary { border-color: var(--brand); background: var(--brand-soft); }
+.flow-box.shared { border-color: #f0b429; background: #fefaf0; }
+.flow-box.saving { border-color: var(--accent); background: #eff5fe; }
+.flow-box.leaf {
+  border-style: dashed; border-color: var(--line-firm); background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.flow-box-head { display: flex; align-items: center; gap: 11px; }
+.flow-box-head b { display: block; font-size: 15.5px; }
+.flow-box-head small { display: block; color: var(--text-soft); font-size: 12.5px; }
+.flow-icon { font-size: 21px; flex-shrink: 0; }
+.flow-total {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 14px; font-weight: 700; color: var(--text);
+}
+.flow-cards { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  font-size: 12.5px; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line-firm); color: var(--text-soft);
+}
+.flow-memo { display: block; margin-top: 8px; color: var(--text-muted); font-size: 12.5px; }
+
+.flow-children { display: grid; gap: 14px; margin-top: 4px; }
+.flow-branch { display: grid; gap: 4px; }
+
+.flow-arrow {
+  display: flex; align-items: center; gap: 10px;
+  padding-left: 22px;
+}
+.flow-arrow.down { justify-content: center; padding: 0; }
+.flow-day {
+  font-size: 12.5px; font-weight: 700; color: var(--text-soft);
+  background: var(--surface-soft); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+}
+.arrow-line { flex: 1; position: relative; height: 2px; background: var(--line-firm); }
+.arrow-line i {
+  position: absolute; right: -1px; top: 50%;
+  width: 0; height: 0; transform: translateY(-50%);
+  border-left: 7px solid var(--line-firm);
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+.arrow-line.vertical { width: 2px; height: 26px; flex: none; background: var(--line-firm); }
+.arrow-line.vertical i {
+  left: 50%; right: auto; top: auto; bottom: -1px;
+  transform: translateX(-50%);
+  border-top: 7px solid var(--line-firm); border-left: 5px solid transparent;
+  border-right: 5px solid transparent; border-bottom: none;
+}
+.flow-amount {
+  font-size: 14px; font-weight: 700; color: var(--brand-strong);
+  white-space: nowrap;
+}
+.flow-target { padding-left: 22px; }
+.flow-sum { margin-top: 12px; text-align: right; }
+
+/* --- 더보기 메뉴 ---------------------------------------------------------- */
+
+.menu-list { display: grid; gap: 10px; }
+.menu-item {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; min-height: 72px; padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  text-align: left; font: inherit;
+}
+.menu-item:hover { background: var(--surface-soft); border-color: var(--line-firm); }
+.menu-icon { font-size: 23px; flex-shrink: 0; }
+.menu-text { flex: 1; min-width: 0; }
+.menu-text b { display: block; font-size: 15.5px; }
+.menu-text small { display: block; color: var(--text-soft); font-size: 13px; }
+.menu-arrow { color: var(--text-muted); font-size: 22px; flex-shrink: 0; }
+
+.summary-rows { display: grid; gap: 2px; }
+.summary-rows > div {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 2px; border-bottom: 1px dashed var(--line);
+}
+.summary-rows > div:last-child { border-bottom: none; }
+.summary-rows span { color: var(--text-soft); }
+.summary-rows b { word-break: break-all; text-align: right; }
+
+@media (min-width: 720px) {
+  .cal-cell { min-height: 82px; }
+  .cal-day { font-size: 14.5px; }
+  .cal-amt { font-size: 12px; }
+  .flow-children { grid-template-columns: 1fr 1fr; gap: 18px; }
+  .fab { right: 32px; bottom: 96px; }
+}
