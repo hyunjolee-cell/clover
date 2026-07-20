@@ -48,6 +48,18 @@
     return Number.isFinite(n) ? n : 0;
   };
   const won = v => `${Math.round(num(v)).toLocaleString('ko-KR')}원`;
+
+  /* 달력 칸처럼 좁은 자리에 쓰는 짧은 금액 표기.
+     10만원 아래는 반올림하면 오해를 부르므로 소수 한 자리까지 보여준다. */
+  const shortWon = v => {
+    const n = Math.round(num(v));
+    if (n < 10000) return n.toLocaleString('ko-KR');
+    if (n < 1000000) {
+      const man = n / 10000;
+      return `${Number.isInteger(man) ? man : man.toFixed(1)}만`;
+    }
+    return `${Math.round(n / 10000).toLocaleString('ko-KR')}만`;
+  };
   const esc = v =>
     String(v ?? '').replace(/[&<>"']/g, c =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
@@ -1508,9 +1520,8 @@
         <button type="button" class="cal-cell${selected === date ? ' on' : ''}${isToday ? ' today' : ''}"
                 data-pick-date="${date}">
           <span class="cal-day${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}">${d}</span>
-          ${income ? `<span class="cal-amt in">+${Math.round(income / 10000)}만</span>` : ''}
-          ${spend ? `<span class="cal-amt out">-${spend >= 10000
-            ? `${Math.round(spend / 10000)}만` : spend.toLocaleString('ko-KR')}</span>` : ''}
+          ${income ? `<span class="cal-amt in">+${shortWon(income)}</span>` : ''}
+          ${spend ? `<span class="cal-amt out">-${shortWon(spend)}</span>` : ''}
           ${transfer ? `<span class="cal-dot" title="자동이체 ${transfer}건"></span>` : ''}
         </button>`);
     }
