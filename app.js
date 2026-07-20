@@ -1070,7 +1070,6 @@
       const history = x[field];
       const applied = historyFrom(history, app.month);
       const value = historyValue(history, app.month);
-      const past = history.filter(r => r.from !== applied);
       return `
         <form class="item" data-row="${kind}" data-id="${x.id}">
           <label class="field"><span>항목명</span>
@@ -1085,9 +1084,16 @@
             <button class="secondary" type="submit">수정 저장</button>
             <button class="danger" type="button" data-delete="${kind}" data-id="${x.id}">삭제</button>
           </div>
-          ${past.length ? `<details class="history"><summary>이전 이력 ${past.length}건</summary>
-            <ul>${history.map(r =>
-              `<li>${monthLabel(r.from)}부터 <b>${won(r.amount)}</b></li>`).join('')}</ul>
+          ${history.length > 1 ? `<details class="history">
+            <summary>금액 변경 이력 ${history.length}건 · 개별 삭제</summary>
+            <ul>${history.map(r => `
+              <li>
+                <span>${monthLabel(r.from)}부터 <b>${won(r.amount)}</b></span>
+                <button class="ghost tiny" type="button" data-delete-history="${kind}"
+                        data-id="${x.id}" data-from="${r.from}">이 이력 삭제</button>
+              </li>`).join('')}</ul>
+            <p class="note">이력을 지우면 그 달부터는 바로 앞 이력의 금액이 적용됩니다.
+              마지막 한 건은 남겨 두어야 합니다.</p>
             </details>` : ''}
         </form>`;
     }).join('');
@@ -1909,6 +1915,42 @@
             return v === undefined ? null : { amount: v };
           },
           success: '실제 금액을 비웠습니다.'
+        }
+      );
+      return;
+    }
+
+    const delHistory = t.closest('[data-delete-history]');
+    if (delHistory) {
+      const kind = delHistory.dataset.deleteHistory;
+      const id = delHistory.dataset.id;
+      const from = delHistory.dataset.from;
+      const field = kind === 'utility' ? 'estimateHistory' : 'history';
+      const entity = findEntity(kind, id);
+      if (!entity) return;
+      if (entity[field].length <= 1) {
+        toast('마지막 한 건은 지울 수 없습니다. 항목 전체를 삭제해주세요.');
+        return;
+      }
+      const row = entity[field].find(r => r.from === from);
+      if (!confirm(
+        `"${entity.name}" 의 ${monthLabel(from)} 이력(${won(row?.amount)})을 삭제할까요?\n` +
+        `그 달부터는 바로 앞 이력의 금액이 적용됩니다.`
+      )) return;
+
+      await mutate(
+        state => {
+          const x = findEntity(kind, id, state);
+          if (x && x[field].length > 1) x[field] = x[field].filter(r => r.from !== from);
+        },
+        {
+          action: 'delete', type: kind, id,
+          summary: `${ENTITY_LABEL[kind]} "${entity.name}" ${monthLabel(from)} 금액 이력 삭제`,
+          pick: s => {
+            const x = findEntity(kind, id, s);
+            return x ? { name: x.name, [field]: x[field] } : null;
+          },
+          success: '이력을 삭제했습니다.'
         }
       );
       return;
