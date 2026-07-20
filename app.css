@@ -447,6 +447,10 @@ input:disabled { background: var(--surface-soft); color: var(--text-muted); }
   padding: 5px 10px 5px 0; white-space: nowrap; vertical-align: top; width: 38%;
 }
 .kv td { padding: 5px 0; word-break: break-word; }
+/* 변경 전후에서 실제로 달라진 줄만 눈에 띄게 한다 */
+.kv tr.changed th { color: var(--brand-strong); }
+.kv tr.changed td { font-weight: 700; color: var(--brand-strong); }
+.kv tr.changed { background: var(--brand-soft); }
 .none { color: var(--text-muted); font-size: 14px; }
 
 /* --- 알림 --------------------------------------------------------------- */

@@ -1342,12 +1342,23 @@
 
   /* --- 16. 화면: 변경 로그 ------------------------------------------------ */
 
-  function valueTable(data) {
+  // 변경 전과 후의 항목 순서를 같게 맞춘다. 순서가 다르면 눈으로 비교하기 어렵다.
+  const FIELD_ORDER = Object.keys(FIELD_LABEL);
+  function orderedKeys(data) {
+    return Object.keys(data)
+      .filter(k => k !== 'id')
+      .sort((a, b) => {
+        const ia = FIELD_ORDER.indexOf(a), ib = FIELD_ORDER.indexOf(b);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+      });
+  }
+
+  function valueTable(data, other) {
     if (data === null || data === undefined) return '<span class="none">없음</span>';
     if (typeof data !== 'object') return `<span>${esc(String(data))}</span>`;
-    const rows = Object.entries(data)
-      .filter(([k]) => k !== 'id')
-      .map(([k, v]) => {
+    const rows = orderedKeys(data)
+      .map(k => {
+        const v = data[k];
         let text;
         if (Array.isArray(v)) {
           text = v.length && v[0] && typeof v[0] === 'object' && 'from' in v[0]
@@ -1357,7 +1368,11 @@
         else if (typeof v === 'boolean') text = v ? '예' : '아니오';
         else if (typeof v === 'number') text = v.toLocaleString('ko-KR');
         else text = String(v);
-        return `<tr><th>${esc(FIELD_LABEL[k] || k)}</th><td>${esc(text)}</td></tr>`;
+        // 실제로 바뀐 항목만 강조해 어디가 달라졌는지 바로 보이게 한다
+        const changed = other && typeof other === 'object' &&
+          JSON.stringify(other[k]) !== JSON.stringify(v);
+        return `<tr class="${changed ? 'changed' : ''}">` +
+               `<th>${esc(FIELD_LABEL[k] || k)}</th><td>${esc(text)}</td></tr>`;
       });
     return rows.length ? `<table class="kv">${rows.join('')}</table>`
                        : '<span class="none">내용 없음</span>';
@@ -1419,8 +1434,8 @@
                 </button>
                 ${open ? `
                   <div class="diff">
-                    <div><h4>변경 전</h4>${valueTable(l.before_data)}</div>
-                    <div><h4>변경 후</h4>${valueTable(l.after_data)}</div>
+                    <div><h4>변경 전</h4>${valueTable(l.before_data, l.after_data)}</div>
+                    <div><h4>변경 후</h4>${valueTable(l.after_data, l.before_data)}</div>
                   </div>` : ''}
               </article>`;
           }).join('') : `<article class="card">${emptyRow('기록이 없습니다.')}</article>`}
