@@ -1,0 +1,14 @@
+{
+  "name": "CLOVER · 우리집 자산관리",
+  "short_name": "CLOVER",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#2f8f5b",
+  "description": "부부가 함께 쓰는 자산·생활비·저축 관리 앱",
+  "lang": "ko",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

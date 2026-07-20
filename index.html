@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#2f8f5b">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="CLOVER — 부부가 함께 쓰는 자산·생활비·저축 관리 앱">
+  <title>CLOVER · 우리집 자산관리</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="./app.css?v=1">
+</head>
+<body>
+  <div id="app"></div>
+
+  <script src="./config.js?v=1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="./app.js?v=1"></script>
+
+  <script>
+    // 이전 버전(couple-finance) 서비스워커가 남아 있으면 정리한다.
+    // 구버전 앱이 캐시로 되살아나는 것을 막기 위한 처리다.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(list => {
+        for (const reg of list) {
+          if (!reg.scope.includes('/clover/')) reg.unregister();
+        }
+      }).catch(() => {});
+
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
