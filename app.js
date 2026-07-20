@@ -2412,7 +2412,7 @@
     localStorage.setItem(`clover-secret-${code}`, secret);
     app.space = { code, name: spaceName, actor, secret };
     app.screen = 'app';
-    app.tab = 'settings';
+    app.tab = 'home';   // 기본값이 이미 채워져 있으므로 바로 홈을 보여준다
     await readSpace({ force: true });
     startRealtime();
     render();
