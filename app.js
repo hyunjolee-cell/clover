@@ -33,6 +33,9 @@
   const CACHE_PREFIX = 'clover-cache-';
   const ACTORS = ['현조', '신영'];
   const OWNERS = ['현조', '신영', '공동'];
+  /* 한 번 눌러 바로 입력할 수 있는 유형. 자주 쓰는 순서로 둔다. */
+  const QUICK_CATEGORIES = ['외식', '장보기', '생필품', '경조사비', '병원·약국',
+                            '교통', '문화·여가', '선물', '기타'];
 
   const pad = n => String(n).padStart(2, '0');
   const today = () => new Date();
@@ -139,6 +142,7 @@
       accounts: [],          // 통장 — 자금 흐름도의 상자
       cards: [],             // 통장에 연결된 신용카드
       flows: [],             // 통장 사이 이체 규칙 — 흐름도의 화살표
+      defaults: null,        // 사용자가 저장해 둔 기본값 (없으면 가계부 25.10 원본을 쓴다)
       monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
     };
   }
@@ -254,6 +258,21 @@
     return s;
   }
 
+  /* 기본값 불러오기가 쓰는 원본.
+     현조님이 따로 저장해 둔 기본값이 있으면 그것을, 없으면 가계부 25.10 원본을 쓴다. */
+  const SEED_KEYS = ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'budgets',
+                     'accounts', 'cards', 'flows', 'scenarios'];
+
+  function currentDefaults() {
+    const saved = app.state.defaults;
+    if (saved && SEED_KEYS.some(k => Array.isArray(saved[k]) && saved[k].length)) {
+      const base = seedState();
+      for (const k of SEED_KEYS) if (Array.isArray(saved[k])) base[k] = clone(saved[k]);
+      return base;
+    }
+    return seedState();
+  }
+
   /* 과거 버전 데이터와 결측 필드를 안전하게 보정 */
   function migrate(raw) {
     const s = Object.assign(emptyState(), raw && typeof raw === 'object' ? clone(raw) : {});
@@ -265,6 +284,7 @@
       if (!Array.isArray(s[key])) s[key] = [];
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
+    if (s.defaults !== null && typeof s.defaults !== 'object') s.defaults = null;
 
     const fixHistory = (x, field) => {
       if (!Array.isArray(x[field]) || !x[field].length) {
@@ -392,6 +412,7 @@
     month: currentMonth,
     selectedDate: '',      // 달력에서 고른 날짜
     settingsGroup: 'income', // 설정에서 보고 있는 항목 종류
+    budgetView: 'all',     // 예산 세부 화면에서 보고 있는 대상
     openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
     sync: '준비 중',
     syncTone: 'idle',      // idle | ok | busy | warn | error
@@ -400,6 +421,7 @@
     busy: false,
     online: navigator.onLine,
     pending: [],           // 네트워크 실패로 아직 서버에 못 올린 변경
+    undoStack: [],         // 되돌리기용 직전 상태 (최근 20건)
     expanded: new Set(),   // 로그 전후값 펼침
     channel: null,
     pollTimer: null,
@@ -461,6 +483,16 @@
     app.state.assets.filter(a => a.kind === 'debt').reduce((s, a) => s + num(a.amount), 0);
   const netAssets = () => assetTotal() - debtTotal();
 
+  /* 개인 생활비(현조·신영)는 서로 사용처를 공유하지 않는다.
+     그래서 예산 전액을 이미 쓴 돈으로 보고 고정비처럼 통째로 뺀다.
+     공동 생활비만 실제 사용내역을 모아 계산한다. */
+  const personalBudget = month =>
+    app.state.budgets.filter(b => b.owner !== '공동')
+      .reduce((s, b) => s + historyValue(b.history, month), 0);
+  const sharedBudget = month => budgetByOwner(month, '공동');
+  const sharedSpend = month =>
+    transactionsOf(month).reduce((s, t) => s + num(t.amount), 0);
+
   function summary(month = app.month) {
     const base = incomeBase(month);
     const bonus = bonusTotal(month);
@@ -468,10 +500,12 @@
     const saving = savingTotal(month);
     const fixed = fixedTotal(month);
     const utility = utilityTotal(month);
-    const spend = spendTotal(month);
-    const expense = fixed + utility + spend;
+    const personal = personalBudget(month);
+    const spend = sharedSpend(month);
+    const expense = fixed + utility + personal + spend;
     return {
-      base, bonus, income, saving, fixed, utility, spend, expense,
+      base, bonus, income, saving, fixed, utility, personal, spend, expense,
+      sharedBudget: sharedBudget(month),
       remaining: income - saving - expense,
       savingRate: income > 0 ? (saving / income) * 100 : 0
     };
@@ -666,6 +700,14 @@
 
       app.version = num(row.version);
       cacheState();
+
+      /* 되돌리기용으로 직전 상태를 쌓아 둔다.
+         되돌리기 자체는 쌓지 않는다. 그러지 않으면 되돌리기를 무한히 반복하게 된다. */
+      if (!meta.isUndo) {
+        app.undoStack.push({ state: snapshot, summary: meta.summary });
+        if (app.undoStack.length > 20) app.undoStack.shift();
+      }
+
       setSync('동기화 완료', 'ok');
       toast(meta.success || '저장했습니다.');
       if (app.tab === 'logs') await loadLogs().catch(() => {});
@@ -691,6 +733,32 @@
       app.busy = false;
       render();
     }
+  }
+
+  /* 직전 변경 하나를 되돌린다. 되돌린 사실도 로그에 남는다. */
+  async function undoLast() {
+    const last = app.undoStack.pop();
+    if (!last) { toast('되돌릴 변경이 없습니다.'); return; }
+    if (!confirm(`직전 변경을 되돌릴까요?\n\n· ${last.summary}\n\n되돌린 기록도 로그에 남습니다.`)) {
+      app.undoStack.push(last);
+      return;
+    }
+    const target = clone(last.state);
+    await mutate(
+      state => {
+        for (const key of Object.keys(state)) delete state[key];
+        Object.assign(state, target);
+      },
+      {
+        action: 'update', type: 'settings', id: null,
+        isUndo: true,
+        summary: `되돌리기 — "${last.summary}" 취소`,
+        pick: () => ({ summary: last.summary }),
+        success: '직전 변경을 되돌렸습니다.'
+      }
+    );
+    app.openRow = null;
+    render();
   }
 
   /* 온라인 복귀 시 밀린 변경 재전송 */
@@ -851,6 +919,10 @@
 
   const emptyRow = text => `<p class="empty">${esc(text)}</p>`;
 
+  /* 사용자별 색 — 현조는 파랑, 신영은 초록, 공동은 무채색 */
+  const ownerClass = o => o === '현조' ? 'own-hj' : o === '신영' ? 'own-sy' : 'own-both';
+  const ownerTag = o => `<span class="tag ${ownerClass(o)}">${esc(o)}</span>`;
+
   /* 라인 아이콘 — 디자인 규격상 이모지를 쓰지 않는다.
      stroke 를 currentColor 로 두어 글자색을 따라간다. */
   const ICON = {
@@ -879,6 +951,7 @@
             'M12 12c0 2.5 1.5 4.5 3.5 4.5S19 14.8 19 13s-1.6-3.2-3.5-3.2' +
             'M12 12c-2.5 0-4.5 1.5-4.5 3.5S9.2 19 11 19s3.2-1.6 3.2-3.5' +
             'M12 12l-1.5 9',
+    undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4',
     key: 'M14.5 4a5.5 5.5 0 1 0-4.2 9.3L4 19.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 0 14.5 4z' +
          'M16 8h.01'
   };
@@ -1008,19 +1081,9 @@
 
   function homeView() {
     const s = summary();
-    const budgetRows = OWNERS.map(owner => {
-      const budget = budgetByOwner(app.month, owner);
-      const used = spendByOwner(app.month, owner);
-      const rate = budget > 0 ? Math.round((used / budget) * 100) : 0;
-      const tone = budget > 0 && used > budget ? 'over' : '';
-      return `
-        <div class="budget-row ${tone}">
-          <div class="budget-top"><span>${owner}</span>
-            <b>${won(used)}${budget > 0 ? ` / ${won(budget)}` : ''}</b></div>
-          <div class="bar"><i style="width:${Math.min(100, rate)}%"></i></div>
-          <small>${budget > 0 ? `예산의 ${rate}% 사용` : '예산 미설정 — 설정 탭에서 추가'}</small>
-        </div>`;
-    }).join('');
+    const sharedUsed = s.spend;
+    const sharedRate = s.sharedBudget > 0 ? Math.round((sharedUsed / s.sharedBudget) * 100) : 0;
+    const over = s.sharedBudget > 0 && sharedUsed > s.sharedBudget;
 
     return `
       <section class="page">
@@ -1043,12 +1106,15 @@
         </div>
 
         <div class="grid three">
-          <article class="card metric"><small>총수입</small><strong>${won(s.income)}</strong>
-            <small>정기 ${won(s.base)} + 보너스 ${won(s.bonus)}</small></article>
-          <article class="card metric"><small>적금·저축</small><strong>${won(s.saving)}</strong>
-            <small>저축률 ${s.savingRate.toFixed(1)}%</small></article>
-          <article class="card metric"><small>총지출</small><strong>${won(s.expense)}</strong>
-            <small>고정비·공과금·생활비</small></article>
+          <button class="card metric" type="button" data-goto="settings:income">
+            <small>총수입</small><strong>${won(s.income)}</strong>
+            <small>정기 ${won(s.base)} + 보너스 ${won(s.bonus)}</small></button>
+          <button class="card metric" type="button" data-goto="settings:saving">
+            <small>적금·저축</small><strong>${won(s.saving)}</strong>
+            <small>저축률 ${s.savingRate.toFixed(1)}%</small></button>
+          <button class="card metric" type="button" data-goto="settings:fixed">
+            <small>총지출</small><strong>${won(s.expense)}</strong>
+            <small>고정비·공과금·생활비</small></button>
         </div>
 
         <div class="grid two">
@@ -1066,17 +1132,39 @@
                 <span>월 고정비</span><b class="minus">−${won(s.fixed)}</b></button>
               <button type="button" data-goto="settings:utility">
                 <span>공과금</span><b class="minus">−${won(s.utility)}</b></button>
+              <button type="button" data-goto="budgets">
+                <span>개인 생활비</span><b class="minus">−${won(s.personal)}</b></button>
               <button type="button" data-goto="monthly">
-                <span>생활비 사용</span><b class="minus">−${won(s.spend)}</b></button>
+                <span>공동 생활비 사용</span><b class="minus">−${won(s.spend)}</b></button>
               <div class="sum"><span>남는 금액</span>
                 <b class="${s.remaining < 0 ? 'minus' : 'plus'}">${won(s.remaining)}</b></div>
             </div>
-            <p class="note">각 줄을 누르면 바로 고칠 수 있는 화면으로 갑니다.</p>
+            <p class="note">각 줄을 누르면 바로 고칠 수 있는 화면으로 갑니다.
+              개인 생활비는 각자 쓰는 돈이라 예산 전액을 나간 것으로 봅니다.</p>
           </article>
 
           <article class="card">
-            <div class="card-head"><h3>생활비 예산 대비 사용</h3></div>
-            <div class="budget-list">${budgetRows}</div>
+            <div class="card-head">
+              <h3>공동 생활비</h3>
+              <button class="secondary" type="button" data-goto="budgets">예산 세부내역</button>
+            </div>
+            <div class="budget-list">
+              <div class="budget-row ${over ? 'over' : ''}">
+                <div class="budget-top"><span class="own-both-text">외식·생필품 등</span>
+                  <b>${won(sharedUsed)}${s.sharedBudget > 0 ? ` / ${won(s.sharedBudget)}` : ''}</b></div>
+                <div class="bar"><i style="width:${Math.min(100, sharedRate)}%"></i></div>
+                <small>${s.sharedBudget > 0
+                  ? `예산의 ${sharedRate}% 사용${over ? ' · 예산 초과' : ''}`
+                  : '예산 미설정 — 설정에서 추가'}</small>
+              </div>
+            </div>
+            <div class="totals" style="margin-top:16px">
+              <div><span class="own-hj-text">현조 생활비</span>
+                <b>${won(budgetByOwner(app.month, '현조'))}</b></div>
+              <div><span class="own-sy-text">신영 생활비</span>
+                <b>${won(budgetByOwner(app.month, '신영'))}</b></div>
+            </div>
+            <p class="note">개인 생활비는 사용처를 따로 적지 않고 예산만 관리합니다.</p>
           </article>
         </div>
       </section>`;
@@ -1148,10 +1236,20 @@
         <article class="card highlight">
           <div class="card-head">
             <div>
-              <h3 class="accent">생활비 사용내역</h3>
-              <small>가장 자주 쓰는 곳입니다</small>
+              <h3 class="accent">공동 생활비 사용내역</h3>
+              <small>외식·생필품처럼 함께 쓴 돈을 적습니다</small>
             </div>
-            <button class="accent-btn" type="button" data-add="transaction">내역 추가</button>
+            <button class="accent-btn" type="button" data-add="transaction">직접 추가</button>
+          </div>
+
+          <div class="quick-cats">
+            <span class="quick-label">자주 쓰는 항목</span>
+            <div class="quick-row">
+              ${QUICK_CATEGORIES.map(c => `
+                <button type="button" class="quick-chip" data-quick-cat="${esc(c)}">
+                  ${icon('plus', 14)}${esc(c)}
+                </button>`).join('')}
+            </div>
           </div>
 
           <div class="filter-bar">
@@ -1171,7 +1269,7 @@
           <div class="totals">
             <div><span>이 달 총 사용액</span><b>${won(monthSpend)}</b></div>
             ${OWNERS.map(o =>
-              `<div><span>${o}</span><b>${won(spendByOwner(app.month, o))}</b></div>`).join('')}
+              `<div><span class="${ownerClass(o)}-text">${o}</span><b>${won(spendByOwner(app.month, o))}</b></div>`).join('')}
           </div>
 
           <div class="list">${transactionRows()}</div>
@@ -1235,7 +1333,7 @@
           <button type="button" class="row-brief" data-open-row="${kind}:${x.id}">
             <span class="brief-main">
               <b>${esc(x.name)}</b>
-              ${opts.owner ? `<span class="tag">${esc(x.owner)}</span>` : ''}
+              ${opts.owner ? ownerTag(x.owner) : ''}
               ${x.memo ? `<small>${esc(x.memo)}</small>` : ''}
             </span>
             <span class="brief-amount">${won(value)}</span>
@@ -1707,7 +1805,7 @@
               <div class="day-item ${e.type}">
                 <div>
                   <b>${esc(e.name)}</b>
-                  ${e.owner ? `<span class="tag">${esc(e.owner)}</span>` : ''}
+                  ${e.owner ? ownerTag(e.owner) : ''}
                   ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}
                 </div>
                 <b class="${e.type === 'income' ? 'plus' : 'minus'}">
@@ -1931,13 +2029,210 @@
       </section>`;
   }
 
-  /* --- 15-C. 화면: 더보기 -------------------------------------------------- */
+  /* --- 15-B2. 화면: 생활비 예산 세부내역 ----------------------------------- */
+
+  function budgetsView() {
+    const view = app.budgetView || 'all';       // all | 현조 | 신영 | 공동 | compare
+    const list = app.state.budgets;
+    const amt = b => historyValue(b.history, app.month);
+
+    const sums = {
+      현조: budgetByOwner(app.month, '현조'),
+      신영: budgetByOwner(app.month, '신영'),
+      공동: budgetByOwner(app.month, '공동')
+    };
+    const total = sums.현조 + sums.신영 + sums.공동;
+
+    /* 항목별 비교 — 같은 이름끼리 현조·신영을 나란히 놓는다 */
+    const names = [...new Set(list.filter(b => b.owner !== '공동').map(b => b.name))];
+    const compareRows = names.map(name => {
+      const hj = list.find(b => b.owner === '현조' && b.name === name);
+      const sy = list.find(b => b.owner === '신영' && b.name === name);
+      const a = hj ? amt(hj) : 0, b2 = sy ? amt(sy) : 0;
+      const max = Math.max(a, b2, 1);
+      return `
+        <div class="cmp-row">
+          <div class="cmp-name">${esc(name)}</div>
+          <div class="cmp-bars">
+            <div class="cmp-side">
+              <span class="cmp-val own-hj-text">${hj ? won(a) : '—'}</span>
+              <div class="cmp-bar"><i class="hj" style="width:${(a / max) * 100}%"></i></div>
+            </div>
+            <div class="cmp-side">
+              <div class="cmp-bar right"><i class="sy" style="width:${(b2 / max) * 100}%"></i></div>
+              <span class="cmp-val own-sy-text">${sy ? won(b2) : '—'}</span>
+            </div>
+          </div>
+          <div class="cmp-diff">${a === b2 ? '같음'
+            : a > b2 ? `현조 +${won(a - b2)}` : `신영 +${won(b2 - a)}`}</div>
+        </div>`;
+    }).join('');
+
+    const groupCard = (owner) => {
+      const rows = list.filter(b => b.owner === owner);
+      if (!rows.length) return '';
+      const sum = sums[owner];
+      return `
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h3 class="${ownerClass(owner)}-text">${owner} 생활비</h3>
+              <small>${rows.length}개 항목 · 합계 ${won(sum)}</small>
+            </div>
+            <button class="secondary" type="button" data-goto="settings:budget">고치기</button>
+          </div>
+          <div class="list">
+            ${rows.map(b => {
+              const v = amt(b);
+              const share = sum > 0 ? Math.round((v / sum) * 100) : 0;
+              return `
+                <div class="row-brief static">
+                  <span class="brief-main">
+                    <b>${esc(b.name)}</b>
+                    ${b.memo ? `<small>${esc(b.memo)}</small>` : ''}
+                    <span class="mini-bar"><i class="${ownerClass(owner)}"
+                      style="width:${share}%"></i></span>
+                  </span>
+                  <span class="brief-amount">${won(v)}<small class="sub-amt">${share}%</small></span>
+                </div>`;
+            }).join('')}
+          </div>
+        </article>`;
+    };
+
+    return `
+      <section class="page">
+        <div class="page-head">
+          <div><span class="eyebrow">생활비 예산</span><h2>어디에 얼마를 잡았는가</h2></div>
+          ${monthNav()}
+        </div>
+
+        <div class="grid three">
+          <article class="card metric"><small class="own-hj-text">현조</small>
+            <strong>${won(sums.현조)}</strong>
+            <small>${total ? Math.round(sums.현조 / total * 100) : 0}%</small></article>
+          <article class="card metric"><small class="own-sy-text">신영</small>
+            <strong>${won(sums.신영)}</strong>
+            <small>${total ? Math.round(sums.신영 / total * 100) : 0}%</small></article>
+          <article class="card metric"><small>공동</small>
+            <strong>${won(sums.공동)}</strong>
+            <small>${total ? Math.round(sums.공동 / total * 100) : 0}%</small></article>
+        </div>
+
+        <div class="chip-tabs">
+          ${[['all', '전체'], ['현조', '현조만'], ['신영', '신영만'],
+             ['공동', '공동만'], ['compare', '항목별 비교']].map(([k, t]) => `
+            <button type="button" class="chip-tab ${view === k ? 'on' : ''}"
+                    data-budget-view="${k}">${t}</button>`).join('')}
+        </div>
+
+        ${view === 'compare' ? `
+          <article class="card">
+            <div class="card-head">
+              <h3>현조 · 신영 항목별 비교</h3>
+              <span class="note">같은 이름끼리 나란히 놓았습니다</span>
+            </div>
+            <div class="cmp-legend">
+              <span><i class="own-hj"></i>현조</span>
+              <span><i class="own-sy"></i>신영</span>
+            </div>
+            ${names.length ? `<div class="cmp-list">${compareRows}</div>`
+              : emptyRow('비교할 개인 예산 항목이 없습니다.')}
+            <div class="totals" style="margin-top:16px">
+              <div><span class="own-hj-text">현조 합계</span><b>${won(sums.현조)}</b></div>
+              <div><span class="own-sy-text">신영 합계</span><b>${won(sums.신영)}</b></div>
+            </div>
+          </article>`
+        : view === 'all'
+          ? ['현조', '신영', '공동'].map(groupCard).join('')
+          : groupCard(view)}
+      </section>`;
+  }
+
+  /* --- 15-C. 화면: 기본값 관리 --------------------------------------------- */
+
+  function defaultsView() {
+    const def = currentDefaults();
+    const saved = !!(app.state.defaults &&
+      SEED_KEYS.some(k => Array.isArray(app.state.defaults[k]) && app.state.defaults[k].length));
+
+    const rows = [
+      ['정기소득', 'recurringIncomes'], ['월 고정비', 'fixedCosts'], ['공과금', 'utilities'],
+      ['적금·저축', 'savings'], ['생활비 예산', 'budgets'],
+      ['통장', 'accounts'], ['연동 카드', 'cards'], ['자동이체', 'flows']
+    ];
+    const sumOf = key => (def[key] || []).reduce((s, x) =>
+      s + (x.history ? historyValue(x.history, app.month)
+        : x.estimateHistory ? historyValue(x.estimateHistory, app.month)
+        : num(x.amount)), 0);
+
+    return `
+      <section class="page">
+        <div class="page-head">
+          <div><span class="eyebrow">기본값</span><h2>기본값 관리</h2></div>
+        </div>
+
+        <article class="seed-banner">
+          <div class="seed-text">
+            <b>${saved ? '직접 저장하신 기본값을 쓰는 중입니다' : '가계부 25.10 원본을 쓰는 중입니다'}</b>
+            <span>기본값을 바꾸시려면 설정에서 항목을 원하는 대로 고친 뒤
+              아래 <b>지금 설정을 기본값으로 저장</b>을 누르시면 됩니다.</span>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>지금 기본값에 담긴 것</h3>
+            <span class="note">${app.month} 기준</span></div>
+          <div class="list">
+            ${rows.map(([label, key]) => `
+              <div class="row-brief static">
+                <span class="brief-main"><b>${label}</b>
+                  <small>${(def[key] || []).map(x => esc(x.name)).slice(0, 4).join(' · ')}${
+                    (def[key] || []).length > 4 ? ` 외 ${(def[key] || []).length - 4}건` : ''}</small>
+                </span>
+                <span class="brief-amount">${(def[key] || []).length}건${
+                  ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'budgets'].includes(key)
+                    ? `<small class="sub-amt">${won(sumOf(key))}</small>` : ''}</span>
+              </div>`).join('')}
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>기본값 바꾸기</h3></div>
+          <div class="tips-grid">
+            <div class="tip-block">
+              <b>지금 설정을 기본값으로 저장</b>
+              <span>현재 등록된 정기소득·고정비·공과금·적금·예산과 통장·카드·자동이체를
+                그대로 기본값으로 덮어씁니다.</span>
+              <button class="accent-btn" type="button" data-save-defaults>지금 설정을 기본값으로 저장</button>
+            </div>
+            <div class="tip-block">
+              <b>기본값을 지금 설정에 불러오기</b>
+              <span>저장해 둔 기본값으로 현재 항목을 되돌립니다.
+                생활비 내역·보너스·자산·목표와 로그는 그대로 둡니다.</span>
+              <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
+            </div>
+            ${saved ? `
+              <div class="tip-block">
+                <b>가계부 25.10 원본으로 초기화</b>
+                <span>직접 저장하신 기본값을 지우고 처음 원본으로 되돌립니다.
+                  현재 설정은 건드리지 않습니다.</span>
+                <button class="ghost" type="button" data-reset-defaults>원본으로 초기화</button>
+              </div>` : ''}
+          </div>
+        </article>
+      </section>`;
+  }
+
+  /* --- 15-D. 화면: 더보기 -------------------------------------------------- */
 
   function moreView() {
     const items = [
+      ['budgets', 'wallet', '생활비 예산 세부', '현조·신영·공동 예산을 따로 또는 함께 비교'],
       ['forecast', 'chart', '자산 포캐스팅', '시나리오별 예상 순자산과 목표 달성 시점'],
       ['flow', 'flow', '자금 흐름', '통장·카드·자동이체를 흐름도로 확인'],
       ['settings', 'settings', '항목 설정', '정기소득·고정비·공과금·적금·예산 관리'],
+      ['defaults', 'history', '기본값 관리', '기본값을 확인하고 원하는 대로 바꾸기'],
       ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록']
     ];
     return `
@@ -2052,7 +2347,7 @@
               <article class="card log">
                 <div class="log-head">
                   <div class="log-who">
-                    <span class="badge">${esc(l.actor)}</span>
+                    <span class="badge ${ownerClass(l.actor)}">${esc(l.actor)}</span>
                     <span class="tag tag-${esc(l.action)}">${esc(ACTION_LABEL[l.action] || l.action)}</span>
                     <span class="tag">${esc(ENTITY_LABEL[l.entity_type] || l.entity_type)}</span>
                   </div>
@@ -2085,15 +2380,16 @@
     ];
     const views = {
       home: homeView, calendar: calendarView, monthly: monthlyView, assets: assetsView,
-      forecast: forecastView, flow: flowView, settings: settingsView,
+      forecast: forecastView, flow: flowView, settings: settingsView, defaults: defaultsView,
+      budgets: budgetsView,
       logs: logsView, more: moreView
     };
     const content = (views[app.tab] || homeView)();
 
     // 더보기 안쪽 화면에서는 돌아갈 곳을 알려준다
-    const sub = ['forecast', 'flow', 'settings', 'logs'].includes(app.tab);
+    const sub = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets'].includes(app.tab);
     const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름',
-                       settings: '항목 설정', logs: '변경 로그' }[app.tab];
+                       settings: '항목 설정', logs: '변경 로그', defaults: '기본값 관리', budgets: '생활비 예산' }[app.tab];
 
     return `
       <div class="app">
@@ -2105,8 +2401,12 @@
               <small>${esc(app.space.name || '우리집')}</small></div>
           </div>
           <div class="status">
+            ${app.undoStack.length ? `
+              <button class="undo-btn" type="button" data-undo
+                      title="직전 변경 되돌리기">${icon('undo', 18)}
+                <span>되돌리기</span></button>` : ''}
             <span class="sync sync-${app.syncTone}">${esc(app.sync)}</span>
-            <span class="badge">${esc(app.space.actor)}</span>
+            <span class="badge ${ownerClass(app.space.actor)}">${esc(app.space.actor)}</span>
           </div>
         </header>
 
@@ -2123,7 +2423,7 @@
         <nav class="bottom-nav">
           ${tabs.map(([k, icon_, t]) => {
             const on = app.tab === k ||
-              (k === 'more' && ['forecast', 'flow', 'settings', 'logs'].includes(app.tab));
+              (k === 'more' && ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets'].includes(app.tab));
             return `<button type="button" data-tab="${k}" class="${on ? 'active' : ''}">
               <span class="nav-icon">${icon(icon_)}</span><span>${t}</span></button>`;
           }).join('')}
@@ -2637,6 +2937,32 @@
       return;
     }
 
+    const quickCat = t.closest('[data-quick-cat]');
+    if (quickCat) {
+      const category = quickCat.dataset.quickCat;
+      const id = uid();
+      const [my, mm] = app.month.split('-').map(Number);
+      const lastDay = new Date(my, mm, 0).getDate();
+      const date = app.month === currentMonth
+        ? ymd(today()) : `${app.month}-${pad(Math.min(1, lastDay))}`;
+      await mutate(
+        state => {
+          state.transactions.push({ id, date, owner: '공동', category,
+                                    place: '', amount: 0, memo: '' });
+        },
+        {
+          action: 'create', type: 'transaction', id,
+          summary: `생활비 내역 "${category}" 추가`,
+          pick: s => findEntity('transaction', id, s),
+          success: `${category} 항목을 만들었습니다. 금액을 채워주세요.`
+        }
+      );
+      const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      row?.querySelector('input[name="amount"]')?.focus();
+      return;
+    }
+
     const add = t.closest('[data-add]');
     if (add) { await addEntity(add.dataset.add); return; }
 
@@ -2666,7 +2992,7 @@
     }
 
     if (t.closest('[data-load-seed]')) {
-      const seed = seedState();
+      const seed = currentDefaults();
       /* 통장·카드·자동이체는 서로를 id 로 참조한다.
          일부만 바꾸면 화살표가 끊긴 흐름도가 되므로 셋을 항상 함께 교체한다. */
       const FIELDS = [
@@ -2781,6 +3107,50 @@
       } else {
         prompt('연결코드를 복사해 전달해주세요.', payload);
       }
+      return;
+    }
+
+    const bv = t.closest('[data-budget-view]');
+    if (bv) { app.budgetView = bv.dataset.budgetView; render(); return; }
+
+    if (t.closest('[data-undo]')) { await undoLast(); return; }
+
+    if (t.closest('[data-save-defaults]')) {
+      const counts = SEED_KEYS.map(k => `· ${
+        { recurringIncomes: '정기소득', fixedCosts: '월 고정비', utilities: '공과금',
+          savings: '적금·저축', budgets: '생활비 예산', accounts: '통장',
+          cards: '연동 카드', flows: '자동이체', scenarios: '포캐스팅' }[k]
+      } ${app.state[k].length}건`).join('\n');
+      if (!confirm(`지금 설정을 기본값으로 저장할까요?\n\n${counts}\n\n` +
+        `앞으로 "기본값 불러오기"를 누르면 이 상태로 되돌아갑니다.`)) return;
+
+      await mutate(
+        state => {
+          state.defaults = {};
+          for (const k of SEED_KEYS) state.defaults[k] = clone(state[k]);
+        },
+        {
+          action: 'update', type: 'settings', id: null,
+          summary: '지금 설정을 기본값으로 저장',
+          pick: s => Object.fromEntries(SEED_KEYS.map(k => [k, (s.defaults?.[k] || []).length])),
+          success: '기본값을 저장했습니다.'
+        }
+      );
+      return;
+    }
+
+    if (t.closest('[data-reset-defaults]')) {
+      if (!confirm('저장해 두신 기본값을 지우고 가계부 25.10 원본으로 되돌릴까요?\n\n' +
+        '지금 등록된 항목은 그대로 두고, 기본값만 초기화합니다.')) return;
+      await mutate(
+        state => { state.defaults = null; },
+        {
+          action: 'update', type: 'settings', id: null,
+          summary: '기본값을 가계부 25.10 원본으로 초기화',
+          pick: s => ({ defaults: s.defaults ? '사용자 저장본' : '원본' }),
+          success: '기본값을 원본으로 되돌렸습니다.'
+        }
+      );
       return;
     }
 

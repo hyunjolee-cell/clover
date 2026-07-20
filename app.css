@@ -847,3 +847,111 @@ h3.accent {
 @media (max-width: 620px) {
   .seed-btn { width: 100%; }
 }
+
+/* ============================================================================
+ * 사용자 구분 · 되돌리기 · 예산 세부 · 빠른 입력
+ * ========================================================================== */
+
+/* --- 사용자 색 (현조 파랑 · 신영 초록 · 공동 무채색) ---------------------- */
+
+.tag.own-hj, .badge.own-hj { background: var(--sky); color: var(--blue-deep); }
+.tag.own-sy, .badge.own-sy { background: var(--success-bg); color: var(--success-text); }
+.tag.own-both, .badge.own-both { background: var(--g100); color: var(--g600); }
+
+.own-hj-text { color: var(--blue) !important; font-weight: 700; }
+.own-sy-text { color: var(--success) !important; font-weight: 700; }
+.own-both-text { color: var(--g600) !important; font-weight: 700; }
+
+/* --- 되돌리기 ------------------------------------------------------------ */
+
+.undo-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 34px; padding: 0 11px;
+  background: var(--g100); border: none; color: var(--g700);
+  font-size: 12.5px; font-weight: 600; border-radius: var(--r-pill);
+}
+.undo-btn:hover { background: var(--g200); }
+@media (max-width: 480px) { .undo-btn span { display: none; } .undo-btn { padding: 0 9px; } }
+
+/* --- 읽기 전용 행 -------------------------------------------------------- */
+
+.row-brief.static { cursor: default; background: var(--g50); border-color: transparent; }
+.row-brief.static:hover { background: var(--g50); border-color: transparent; }
+.sub-amt { display: block; color: var(--g400); font-size: 11.5px; font-weight: 600; }
+
+.mini-bar {
+  display: block; height: 4px; margin-top: 6px;
+  background: var(--g200); border-radius: var(--r-pill); overflow: hidden;
+}
+.mini-bar i { display: block; height: 100%; border-radius: var(--r-pill); }
+.mini-bar i.own-hj { background: var(--blue); }
+.mini-bar i.own-sy { background: var(--success); }
+.mini-bar i.own-both { background: var(--g400); }
+
+/* --- 항목별 비교 --------------------------------------------------------- */
+
+.cmp-legend {
+  display: flex; gap: 16px; margin-bottom: 14px;
+  font-size: 13px; color: var(--g500);
+}
+.cmp-legend span { display: flex; align-items: center; gap: 6px; }
+.cmp-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.cmp-legend i.own-hj { background: var(--blue); }
+.cmp-legend i.own-sy { background: var(--success); }
+
+.cmp-list { display: grid; gap: 14px; }
+.cmp-row { display: grid; gap: 6px; }
+.cmp-name { font-size: 14.5px; font-weight: 600; color: var(--g900); }
+.cmp-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; }
+.cmp-side { display: flex; align-items: center; gap: 8px; }
+.cmp-side:first-child { flex-direction: row-reverse; }
+.cmp-val { font-size: 13px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cmp-bar { flex: 1; height: 10px; background: var(--g100); border-radius: 4px; overflow: hidden; }
+.cmp-bar i { display: block; height: 100%; border-radius: 4px; float: right; }
+.cmp-bar.right i { float: left; }
+.cmp-bar i.hj { background: var(--blue); }
+.cmp-bar i.sy { background: var(--success); }
+.cmp-diff { font-size: 12.5px; color: var(--g500); text-align: center; }
+
+/* --- 유형별 빠른 입력 ---------------------------------------------------- */
+
+.quick-cats {
+  padding: 14px; margin-bottom: 16px;
+  background: var(--sky-light); border-radius: var(--r-btn);
+}
+.quick-label {
+  display: block; font-size: 12.5px; font-weight: 600;
+  color: var(--blue-deep); margin-bottom: 9px;
+}
+.quick-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.quick-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 38px; padding: 0 13px;
+  background: #fff; border: 1px solid var(--blue-pale);
+  color: var(--blue-deep); font-size: 13.5px; font-weight: 600;
+  border-radius: var(--r-pill);
+}
+.quick-chip:hover { background: var(--sky); border-color: var(--blue); }
+
+/* --- 기본값 관리 --------------------------------------------------------- */
+
+.tips-grid { display: grid; gap: 12px; }
+.tip-block {
+  display: grid; gap: 6px; justify-items: start;
+  padding: 16px; background: var(--g50); border-radius: var(--r-btn);
+}
+.tip-block b { font-size: 15px; color: var(--g900); }
+.tip-block span { color: var(--g500); font-size: 13.5px; }
+.tip-block button { margin-top: 6px; }
+
+@media (min-width: 700px) {
+  .tips-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+}
+
+/* 요약 카드를 눌러 해당 화면으로 갈 수 있게 한다 */
+button.card.metric {
+  display: block; width: 100%; text-align: left;
+  min-height: 0; padding: 20px; cursor: pointer;
+}
+button.card.metric:hover { background: var(--g50); }
+button.card.metric:active { transform: scale(.99); }
