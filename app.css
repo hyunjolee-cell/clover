@@ -984,3 +984,146 @@ button.hero-item {
 }
 button.hero-item:hover { opacity: .75; }
 button.hero-item:active { transform: none; }
+
+/* ============================================================================
+ * 순자산 추이 · 목돈 지출
+ * ========================================================================== */
+
+.trend {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  gap: 4px; align-items: end;
+  height: 150px; padding-top: 8px;
+}
+.trend-col {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  gap: 4px; height: 100%; min-height: 0; padding: 0;
+  background: none; border: none; cursor: pointer; border-radius: 8px;
+}
+.trend-col:hover { background: var(--g50); }
+.trend-col:active { transform: none; }
+.trend-val {
+  font-size: 9.5px; font-weight: 700; color: var(--g500);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.trend-bar {
+  width: 100%; max-width: 26px; min-height: 3px;
+  background: var(--blue-pale); border-radius: 4px 4px 0 0;
+  transition: height .2s;
+}
+.trend-bar.neg { background: #F0C4C4; }
+.trend-col.now .trend-bar { background: var(--blue); }
+.trend-label { font-size: 10.5px; color: var(--g400); font-weight: 600; }
+.trend-col.now .trend-label { color: var(--blue); }
+
+.sub-amt.up { color: var(--success); }
+.sub-amt.down { color: var(--danger); }
+
+/* ============================================================================
+ * 모바일 최적화 — 폰에서 더 많이 쓰는 앱이다
+ * ========================================================================== */
+
+@media (max-width: 699px) {
+  /* 손가락으로 눌러야 하므로 최소 크기를 키운다 */
+  button { min-height: 50px; }
+  .item-actions button { min-height: 50px; font-size: 15px; }
+  .row-brief { padding: 16px; min-height: 62px; }
+  .brief-main b { font-size: 15.5px; }
+  .brief-amount { font-size: 15.5px; }
+  input, select, textarea { min-height: 52px; font-size: 16px; }  /* 16px 미만은 iOS 확대 */
+
+  /* 화면 폭을 넓게 쓴다 */
+  :root { --pad-x: 16px; }
+  .page { gap: 16px; padding: 18px var(--pad-x) 24px; }
+  .card { padding: 18px 16px; }
+  .hero { padding: 20px 16px; gap: 18px; }
+
+  /* 한 손으로 닿는 곳에 주요 동작 */
+  .fab { width: 60px; height: 60px; min-height: 60px; right: 16px; }
+  .bottom-nav button { min-height: 58px; }
+
+  /* 편집 폼은 한 줄에 하나씩 — 좁은 화면에서 두 칸은 답답하다 */
+  .item, .item.open { grid-template-columns: 1fr; gap: 12px; }
+  .item-actions { flex-wrap: wrap; }
+  .item-actions button { flex: 1 1 30%; }
+
+  /* 표는 가로 스크롤 대신 정보를 줄인다 */
+  .totals { grid-template-columns: 1fr; gap: 8px; }
+  .filter-bar { grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* 달력은 더 크게 — 손가락으로 날짜를 눌러야 한다 */
+  .cal-cell { min-height: 56px; padding: 6px 1px; }
+  .cal-day { font-size: 14px; }
+  .cal-amt { font-size: 9.5px; }
+
+  /* 흐름도 들여쓰기 축소 */
+  .flow-target, .flow-arrow { padding-left: 12px; }
+  .flow-target .flow-target, .flow-target .flow-arrow { padding-left: 8px; }
+  .flow-box { padding: 14px; }
+
+  /* 비교 막대 */
+  .cmp-bars { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .cmp-val { font-size: 12px; }
+
+  /* 추이 그래프 */
+  .trend { height: 128px; }
+  .trend-val { font-size: 8.5px; }
+  .trend-label { font-size: 9.5px; }
+
+  /* 제목 크기 */
+  h1 { font-size: 23px; }
+  h2 { font-size: 20px; }
+  .hero-item strong { font-size: 27px; }
+  .metric strong { font-size: 19px; }
+
+  /* 칩은 가로 스크롤로 넘긴다 */
+  .chip-tabs {
+    flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .chip-tabs::-webkit-scrollbar { display: none; }
+  .chip-tab { flex-shrink: 0; }
+
+  .quick-row { gap: 6px; }
+  .quick-chip { min-height: 42px; font-size: 14px; }
+
+  .seed-banner { padding: 16px; gap: 12px; }
+  .seed-text b { font-size: 16.5px; }
+}
+
+/* 아주 좁은 화면 */
+@media (max-width: 380px) {
+  :root { --pad-x: 13px; }
+  .card { padding: 16px 13px; }
+  .bottom-nav button { font-size: 10px; }
+  .cal-cell { min-height: 50px; }
+  .hero-item strong { font-size: 25px; }
+}
+
+/* 가로 모드 폰 — 세로 공간이 부족하다 */
+@media (max-height: 480px) and (orientation: landscape) {
+  .topbar { position: static; }
+  .hero { grid-template-columns: 1fr 1fr; }
+  .trend { height: 100px; }
+}
+
+/* 항목 추가 드롭다운 — 버튼처럼 보이게 */
+.preset-pick {
+  width: auto; min-width: 130px; min-height: 44px;
+  padding: 0 38px 0 15px;
+  background-color: var(--g100);
+  color: var(--g800); font-size: 14px; font-weight: 600;
+  border-radius: var(--r-btn); cursor: pointer;
+}
+.preset-pick:hover { background-color: var(--g200); }
+.preset-pick:focus { box-shadow: inset 0 0 0 2px var(--blue); background-color: #fff; }
+.card.highlight .preset-pick {
+  background-color: var(--blue); color: #fff;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+.filter-bar.single { grid-template-columns: 1fr; }
+
+@media (max-width: 699px) {
+  .preset-pick { width: 100%; min-height: 50px; font-size: 15px; }
+  .card-head { gap: 10px; }
+  .card-head > div:first-child { flex: 1 1 100%; }
+}

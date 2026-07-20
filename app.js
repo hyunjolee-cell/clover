@@ -34,8 +34,44 @@
   const ACTORS = ['현조', '신영'];
   const OWNERS = ['현조', '신영', '공동'];
   /* 한 번 눌러 바로 입력할 수 있는 유형. 자주 쓰는 순서로 둔다. */
-  const QUICK_CATEGORIES = ['외식', '장보기', '생필품', '경조사비', '병원·약국',
-                            '교통', '문화·여가', '선물', '기타'];
+  const QUICK_CATEGORIES = ['생활비', '외식', '장보기', '생필품', '경조사비',
+                            '병원·약국', '교통', '문화·여가', '선물', '기타'];
+
+  /* 새 항목을 만들 때 고르는 목록.
+     매번 이름을 직접 치지 않아도 되도록 자주 쓰는 것을 미리 담아 둔다. */
+  const PRESETS = {
+    income: ['월급', '상여·성과급', '부업 수입', '임대 수입', '이자·배당', '기타 소득'],
+    fixed: ['월세', '관리비', '통신비', '실비보험', '암보험', '자동차보험', '구독료',
+            '대출 상환', '정수기', 'TV 수신료', '부모님 용돈', '기타 고정비'],
+    utility: ['전기세', '수도세', '도시가스', '관리비', '인터넷', 'TV 수신료', '기타 공과금'],
+    saving: ['청년적금', '주택청약', '정기적금', '집마련적금', '여행적금', '비상금적금',
+             '부모님적금', '조카적금', '옷적금', '경조사', '기타 적금'],
+    budget: ['용돈', '점심', '교통비', '미용실', '미용', '화장품', '병원',
+             '외식 및 생필품', '기타 생활비'],
+    asset: ['입출금 계좌', '정기예금', '적금 누적액', '주식', 'ETF', 'ISA', '연금',
+            '금', '전세보증금', '자동차', '부동산', '기타 자산',
+            '— 부채 —', '신용대출', '주택담보대출', '전세자금대출', '카드 미결제금',
+            '학자금대출', '기타 부채'],
+    account: ['월급통장', '생활비 통장', '공용 통장', '저축 통장', '비상금 통장'],
+    card: ['국민카드', '삼성카드', '신한카드', '현대카드', '롯데카드', '하나카드', '우리카드'],
+    flow: ['생활비 이체', '공용통장 이체', '적금통장 이체', '적금 납입', '보험료 납부', '대출 상환']
+  };
+
+  /* 항목 추가 드롭다운 — 고르면 그 이름으로 바로 만들어진다 */
+  const presetPicker = (kind, label = '항목 추가') => {
+    const list = PRESETS[kind] || [];
+    if (!list.length) {
+      return `<button class="secondary" type="button" data-add="${kind}">${label}</button>`;
+    }
+    return `
+      <select class="preset-pick" data-add-preset="${kind}" aria-label="${label}">
+        <option value="">＋ ${label}</option>
+        ${list.map(n => n.startsWith('—')
+          ? `<option disabled>${esc(n)}</option>`
+          : `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
+        <option value="__custom">직접 입력하기…</option>
+      </select>`;
+  };
 
   const pad = n => String(n).padStart(2, '0');
   const today = () => new Date();
@@ -142,6 +178,7 @@
       accounts: [],          // 통장 — 자금 흐름도의 상자
       cards: [],             // 통장에 연결된 신용카드
       flows: [],             // 통장 사이 이체 규칙 — 흐름도의 화살표
+      bigSpends: [],         // 집·차 같은 목돈 지출 — 어느 자산에서 나가 무엇으로 남았는지
       defaults: null,        // 사용자가 저장해 둔 기본값 (없으면 가계부 25.10 원본을 쓴다)
       monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
     };
@@ -280,7 +317,7 @@
 
     for (const key of ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'assets',
                        'budgets', 'bonuses', 'transactions', 'scenarios', 'goals',
-                       'accounts', 'cards', 'flows']) {
+                       'accounts', 'cards', 'flows', 'bigSpends']) {
       if (!Array.isArray(s[key])) s[key] = [];
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
@@ -328,13 +365,33 @@
       x.amount = num(x.amount);
       x.memo ||= '';
     }
+    /* 자산·부채도 월별 이력을 갖는다.
+       그래야 "작년 말 순자산이 얼마였나"와 큰 지출로 무엇이 어떻게 바뀌었는지가 남는다.
+       예전 구조(amount 한 개)는 기준일이 속한 달의 이력으로 옮긴다. */
     for (const x of s.assets) {
       x.id ||= uid(); x.name ||= '이름 없음';
       x.kind = x.kind === 'debt' ? 'debt' : 'asset';
       x.category ||= '기타';
       if (!OWNERS.includes(x.owner)) x.owner = '공동';
-      x.amount = num(x.amount);
       x.asOf ||= ymd(today());
+      x.memo ||= '';
+      if (!Array.isArray(x.history) || !x.history.length) {
+        x.history = [{ from: monthOf(x.asOf) || currentMonth, amount: num(x.amount) }];
+      }
+      x.history = x.history
+        .map(r => ({ from: String(r.from || currentMonth).slice(0, 7), amount: num(r.amount) }))
+        .sort((a, b) => a.from.localeCompare(b.from));
+      x.amount = historyValue(x.history, currentMonth);   // 호환용 표시값
+    }
+
+    for (const x of s.bigSpends) {
+      x.id ||= uid(); x.name ||= '목돈 지출';
+      x.month = String(x.month || currentMonth).slice(0, 7);
+      x.amount = num(x.amount);
+      x.fromId ||= '';
+      x.toId ||= '';
+      x.debtId ||= '';
+      x.debtAmount = num(x.debtAmount);
       x.memo ||= '';
     }
     for (const x of s.bonuses) {
@@ -414,6 +471,7 @@
     settingsGroup: 'income', // 설정에서 보고 있는 항목 종류
     budgetView: 'all',     // 예산 세부 화면에서 보고 있는 대상
     openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
+    passwordReturn: '',    // 비밀번호 변경 후 돌아갈 화면
     sync: '준비 중',
     syncTone: 'idle',      // idle | ok | busy | warn | error
     logs: [],
@@ -477,11 +535,25 @@
     app.state.budgets.filter(b => b.owner === owner)
       .reduce((s, b) => s + historyValue(b.history, month), 0);
 
-  const assetTotal = () =>
-    app.state.assets.filter(a => a.kind === 'asset').reduce((s, a) => s + num(a.amount), 0);
-  const debtTotal = () =>
-    app.state.assets.filter(a => a.kind === 'debt').reduce((s, a) => s + num(a.amount), 0);
-  const netAssets = () => assetTotal() - debtTotal();
+  /* 자산·부채는 월별 이력을 갖는다. 기본은 지금 보고 있는 달 기준이다. */
+  const assetAt = (a, month = app.month) => historyValue(a.history, month);
+  const assetTotal = (month = app.month) =>
+    app.state.assets.filter(a => a.kind === 'asset')
+      .reduce((s, a) => s + assetAt(a, month), 0);
+  const debtTotal = (month = app.month) =>
+    app.state.assets.filter(a => a.kind === 'debt')
+      .reduce((s, a) => s + assetAt(a, month), 0);
+  const netAssets = (month = app.month) => assetTotal(month) - debtTotal(month);
+
+  /* 최근 N개월 순자산 추이 */
+  function netAssetSeries(months = 12, endMonth = app.month) {
+    const out = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const m = shiftMonth(endMonth, -i);
+      out.push({ month: m, asset: assetTotal(m), debt: debtTotal(m), net: netAssets(m) });
+    }
+    return out;
+  }
 
   /* 개인 생활비(현조·신영)는 서로 사용처를 공유하지 않는다.
      그래서 예산 전액을 이미 쓴 돈으로 보고 고정비처럼 통째로 뺀다.
@@ -526,9 +598,10 @@
       ? app.state.assets.filter(x => x.kind === 'debt' && sc.debtIds.includes(x.id))
       : app.state.assets.filter(x => x.kind === 'debt');
 
+    // 시작 시점(기준 시작월)의 자산·부채 금액을 쓴다
     const startValue =
-      assets.reduce((s, x) => s + num(x.amount), 0) -
-      debts.reduce((s, x) => s + num(x.amount), 0);
+      assets.reduce((s, x) => s + assetAt(x, start), 0) -
+      debts.reduce((s, x) => s + assetAt(x, start), 0);
 
     const total = maxMonths ?? Math.max(1, num(sc.months));
     let value = startValue;
@@ -849,7 +922,7 @@
     asset: '자산·부채', budget: '생활비 예산', transaction: '생활비 내역',
     scenario: '포캐스팅 시나리오', goal: '자산 목표', settings: '설정',
     space: '공유공간', device: '기기',
-    account: '통장', card: '연동 카드', flow: '자동이체'
+    account: '통장', card: '연동 카드', flow: '자동이체', bigSpend: '목돈 지출'
   };
   const ACTION_LABEL = {
     create: '추가', update: '수정', delete: '삭제', connect: '접속', system: '시스템'
@@ -870,7 +943,8 @@
     saving: state.savings, asset: state.assets, budget: state.budgets,
     bonus: state.bonuses, transaction: state.transactions,
     scenario: state.scenarios, goal: state.goals,
-    account: state.accounts, card: state.cards, flow: state.flows
+    account: state.accounts, card: state.cards, flow: state.flows,
+    bigSpend: state.bigSpends
   }[kind] || null);
 
   const findEntity = (kind, id, state = app.state) =>
@@ -965,11 +1039,12 @@
   /* --- 9. 화면: 로그인 ---------------------------------------------------- */
 
   function authView() {
-    const mode = app.authMode;                 // login | signup | reset
+    const mode = app.authMode;      // login | signup | reset | keyreset
     const lead = {
       login: '가입한 이메일로 로그인합니다.',
       signup: '이메일과 비밀번호로 계정을 만듭니다.',
-      reset: '가입한 이메일로 비밀번호 재설정 링크를 보내드립니다.'
+      reset: '가입한 이메일로 비밀번호 재설정 링크를 보내드립니다.',
+      keyreset: '공유코드와 연결키를 넣으면 메일 없이 여기서 바로 바꿉니다.'
     }[mode];
 
     return `
@@ -987,7 +1062,16 @@
               <input name="email" type="email" autocomplete="email" required
                      placeholder="example@mail.com">
             </label>
-            ${mode === 'reset' ? '' : `
+            ${mode === 'keyreset' ? `
+              <label class="field"><span>공유코드</span>
+                <input name="code" placeholder="예: ABC123" required
+                       autocapitalize="characters"></label>
+              <label class="field"><span>연결키</span>
+                <input name="secret" placeholder="상대 휴대폰 설정에서 확인" required></label>
+              <label class="field"><span>새 비밀번호</span>
+                <input name="password" type="password" minlength="6" required
+                       autocomplete="new-password" placeholder="6자 이상"></label>`
+            : mode === 'reset' ? '' : `
               <label class="field">
                 <span>비밀번호</span>
                 <input name="password" type="password" minlength="6" required
@@ -996,14 +1080,17 @@
               </label>`}
             <button class="primary" type="submit">
               ${mode === 'signup' ? '가입하고 시작하기'
-                : mode === 'reset' ? '재설정 링크 받기' : '로그인'}
+                : mode === 'reset' ? '재설정 링크 받기'
+                : mode === 'keyreset' ? '비밀번호 바꾸기' : '로그인'}
             </button>
           </form>
 
           <div class="auth-links">
             ${mode === 'login' ? `
               <button class="link" type="button" data-auth-mode="signup">처음이신가요? 계정 만들기</button>
-              <button class="link" type="button" data-auth-mode="reset">비밀번호를 잊으셨나요?</button>`
+              <button class="link" type="button" data-auth-mode="keyreset">
+                비밀번호를 잊으셨나요? 연결키로 바로 바꾸기</button>
+              <button class="link" type="button" data-auth-mode="reset">메일로 재설정 링크 받기</button>`
             : `<button class="link" type="button" data-auth-mode="login">로그인 화면으로</button>`}
           </div>
         </section>
@@ -1032,6 +1119,7 @@
             </label>
             <button class="primary" type="submit">비밀번호 변경</button>
           </form>
+          ${app.passwordReturn ? '<button class="link" type="button" data-cancel-password>취소하고 돌아가기</button>' : ''}
         </section>
       </main>`;
   }
@@ -1208,9 +1296,12 @@
       <form class="item" data-row="transaction" data-id="${x.id}">
         <label class="field"><span>사용일</span>
           <input name="date" type="date" value="${esc(x.date)}"></label>
-        <label class="field"><span>사용자</span>${ownerSelect('owner', x.owner)}</label>
         <label class="field"><span>카테고리</span>
-          <input name="category" value="${esc(x.category)}" list="categoryList"></label>
+          <select name="category">
+            ${[...new Set([...QUICK_CATEGORIES, x.category])].filter(Boolean).map(c =>
+              `<option ${x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+          </select></label>
+        <label class="field"><span>누가 결제</span>${ownerSelect('owner', x.owner)}</label>
         <label class="field"><span>사용처</span>
           <input name="place" value="${esc(x.place)}"></label>
         <label class="field"><span>금액</span>
@@ -1255,15 +1346,10 @@
             </div>
           </div>
 
-          <div class="filter-bar">
-            <label class="field"><span>사용자</span>
-              <select data-tx-filter="owner">
-                <option value="">전체</option>
-                ${OWNERS.map(o => `<option ${filter.owner === o ? 'selected' : ''}>${o}</option>`).join('')}
-              </select></label>
-            <label class="field"><span>카테고리</span>
+          <div class="filter-bar single">
+            <label class="field"><span>카테고리로 걸러 보기</span>
               <select data-tx-filter="category">
-                <option value="">전체</option>
+                <option value="">전체 보기</option>
                 ${categories.map(c =>
                   `<option ${filter.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
               </select></label>
@@ -1379,29 +1465,188 @@
   function assetRows() {
     if (!app.state.assets.length)
       return emptyRow('등록된 자산·부채가 없습니다. 추가 버튼을 눌러주세요.');
-    return app.state.assets.map(x => `
-      <form class="item" data-row="asset" data-id="${x.id}">
-        <label class="field"><span>항목명</span>
-          <input name="name" value="${esc(x.name)}"></label>
-        <label class="field"><span>종류</span>
-          <select name="kind">
-            <option value="asset" ${x.kind === 'asset' ? 'selected' : ''}>자산</option>
-            <option value="debt" ${x.kind === 'debt' ? 'selected' : ''}>부채</option>
-          </select></label>
-        <label class="field"><span>카테고리</span>
-          <input name="category" value="${esc(x.category)}" list="assetCategoryList"></label>
-        <label class="field"><span>소유자</span>${ownerSelect('owner', x.owner)}</label>
-        <label class="field"><span>현재 금액</span>
-          <input name="amount" inputmode="numeric" value="${num(x.amount)}"></label>
-        <label class="field"><span>기준일</span>
-          <input name="asOf" type="date" value="${esc(x.asOf)}"></label>
-        <label class="field wide"><span>메모</span>
-          <input name="memo" value="${esc(x.memo)}"></label>
-        <div class="item-actions">
-          <button class="secondary" type="submit">수정 저장</button>
-          <button class="danger" type="button" data-delete="asset" data-id="${x.id}">삭제</button>
+
+    return app.state.assets.map(x => {
+      const open = app.openRow === `asset:${x.id}`;
+      const value = assetAt(x);
+      const applied = historyFrom(x.history, app.month);
+      const prev = historyValue(x.history, shiftMonth(app.month, -1));
+      const diff = value - prev;
+
+      if (!open) {
+        return `
+          <button type="button" class="row-brief" data-open-row="asset:${x.id}">
+            <span class="brief-main">
+              <b>${esc(x.name)}</b>
+              <span class="tag ${x.kind === 'debt' ? 'tag-delete' : ''}">${
+                x.kind === 'debt' ? '부채' : esc(x.category)}</span>
+              ${ownerTag(x.owner)}
+            </span>
+            <span class="brief-amount ${x.kind === 'debt' ? 'minus' : ''}">${won(value)}
+              ${diff ? `<small class="sub-amt ${diff > 0 ? 'up' : 'down'}">${
+                diff > 0 ? '+' : '−'}${shortWon(Math.abs(diff))}</small>` : ''}</span>
+            <span class="brief-arrow">${icon('chevron', 18)}</span>
+          </button>`;
+      }
+
+      return `
+        <form class="item open" data-row="asset" data-id="${x.id}">
+          <label class="field"><span>항목명</span>
+            <input name="name" value="${esc(x.name)}"></label>
+          <label class="field"><span>종류</span>
+            <select name="kind">
+              <option value="asset" ${x.kind === 'asset' ? 'selected' : ''}>자산</option>
+              <option value="debt" ${x.kind === 'debt' ? 'selected' : ''}>부채</option>
+            </select></label>
+          <label class="field"><span>카테고리</span>
+            <select name="category">
+              ${[...new Set(['현금', '예금', '적금', '투자', '연금', '부동산', '자동차',
+                              '대출', '카드', '기타', x.category])].filter(Boolean).map(c =>
+                `<option ${x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select></label>
+          <label class="field"><span>소유자</span>${ownerSelect('owner', x.owner)}</label>
+          <label class="field"><span>기록할 달</span>
+            <input name="from" type="month" value="${esc(applied)}"></label>
+          <label class="field"><span>그 달 잔액</span>
+            <input name="amount" inputmode="numeric" value="${value}"></label>
+          <label class="field wide"><span>메모</span>
+            <input name="memo" value="${esc(x.memo)}"></label>
+          <div class="item-actions">
+            <button class="secondary" type="submit">저장</button>
+            <button class="ghost" type="button" data-close-row>접기</button>
+            <button class="danger" type="button" data-delete="asset" data-id="${x.id}">삭제</button>
+          </div>
+          ${x.history.length > 1 ? `<details class="history">
+            <summary>잔액 기록 ${x.history.length}건 · 개별 삭제</summary>
+            <ul>${x.history.map(r => `
+              <li>
+                <span>${monthLabel(r.from)} <b>${won(r.amount)}</b></span>
+                <button class="ghost tiny" type="button" data-delete-history="asset"
+                        data-id="${x.id}" data-from="${r.from}">삭제</button>
+              </li>`).join('')}</ul>
+            <p class="note">달마다 잔액을 남겨 두면 순자산이 어떻게 변해왔는지 볼 수 있습니다.</p>
+            </details>` : ''}
+        </form>`;
+    }).join('');
+  }
+
+  /* 목돈 지출을 자산 잔액에 반영한다.
+     빠지는 자산은 줄고, 남는 자산과 대출은 늘어난다.
+     그 달의 직전 잔액을 기준으로 계산해 두 번 눌러도 값이 어긋나지 않게 한다. */
+  function applyBigSpend(state, spend) {
+    const month = spend.month;
+    const prev = shiftMonth(month, -1);
+    const find = id => state.assets.find(a => a.id === id);
+
+    const from = find(spend.fromId);
+    if (from) {
+      const base = historyValue(from.history, prev);
+      setHistory(from.history, month, base - num(spend.amount));
+    }
+    const to = find(spend.toId);
+    if (to) {
+      const base = historyValue(to.history, prev);
+      // 대출을 함께 받았다면 산 물건의 값은 낸 돈 + 대출금이다
+      setHistory(to.history, month, base + num(spend.amount) + num(spend.debtAmount));
+    }
+    const debt = find(spend.debtId);
+    if (debt && num(spend.debtAmount)) {
+      const base = historyValue(debt.history, prev);
+      setHistory(debt.history, month, base + num(spend.debtAmount));
+    }
+  }
+
+  /* 순자산 추이 — 최근 12개월을 막대로 */
+  function netTrend() {
+    const series = netAssetSeries(12);
+    const values = series.map(p => p.net);
+    const max = Math.max(...values.map(Math.abs), 1);
+    const first = values[0], last = values[values.length - 1];
+    const grew = last - first;
+
+    return `
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h3>순자산 추이</h3>
+            <small>최근 12개월 · ${grew >= 0 ? '늘어난' : '줄어든'} 금액
+              <b class="${grew >= 0 ? 'plus' : 'minus'}">${won(Math.abs(grew))}</b></small>
+          </div>
         </div>
-      </form>`).join('');
+        <div class="trend">
+          ${series.map(p => {
+            const h = Math.max(3, (Math.abs(p.net) / max) * 100);
+            const isNow = p.month === app.month;
+            return `
+              <button type="button" class="trend-col ${isNow ? 'now' : ''}"
+                      data-goto="assets" title="${monthLabel(p.month)} ${won(p.net)}">
+                <span class="trend-val">${p.net ? shortWon(p.net) : ''}</span>
+                <span class="trend-bar ${p.net < 0 ? 'neg' : ''}" style="height:${h}%"></span>
+                <span class="trend-label">${Number(p.month.slice(5))}월</span>
+              </button>`;
+          }).join('')}
+        </div>
+        <p class="note">달마다 잔액을 기록해 두면 막대가 채워집니다.
+          큰 지출을 남기면 그달에 반영됩니다.</p>
+      </article>`;
+  }
+
+  /* 목돈 지출 — 어느 자산에서 나가 무엇으로 남았는지 한 번에 기록 */
+  function bigSpendRows() {
+    if (!app.state.bigSpends.length)
+      return emptyRow('기록된 목돈 지출이 없습니다.');
+    const nameOf = id => app.state.assets.find(a => a.id === id)?.name || '—';
+    return [...app.state.bigSpends]
+      .sort((a, b) => String(b.month).localeCompare(String(a.month)))
+      .map(x => {
+        const open = app.openRow === `bigSpend:${x.id}`;
+        if (!open) {
+          return `
+            <button type="button" class="row-brief" data-open-row="bigSpend:${x.id}">
+              <span class="brief-main">
+                <b>${esc(x.name)}</b>
+                <small>${monthLabel(x.month)} · ${esc(nameOf(x.fromId))}에서 출금${
+                  x.toId ? ` → ${esc(nameOf(x.toId))}` : ''}${
+                  x.debtAmount ? ` · 대출 ${shortWon(x.debtAmount)}` : ''}</small>
+              </span>
+              <span class="brief-amount minus">−${won(x.amount)}</span>
+              <span class="brief-arrow">${icon('chevron', 18)}</span>
+            </button>`;
+        }
+        const assetOpts = (name, value, blank) => `
+          <select name="${name}">
+            <option value="">${blank}</option>
+            ${app.state.assets.map(a =>
+              `<option value="${a.id}" ${value === a.id ? 'selected' : ''}>${
+                esc(a.name)}${a.kind === 'debt' ? ' (부채)' : ''}</option>`).join('')}
+          </select>`;
+        return `
+          <form class="item open" data-row="bigSpend" data-id="${x.id}">
+            <label class="field"><span>무엇을 샀는가</span>
+              <input name="name" value="${esc(x.name)}" placeholder="예: 아파트 매입"></label>
+            <label class="field"><span>언제</span>
+              <input name="month" type="month" value="${esc(x.month)}"></label>
+            <label class="field"><span>쓴 금액</span>
+              <input name="amount" inputmode="numeric" value="${num(x.amount)}"></label>
+            <label class="field"><span>어디서 뺐는가</span>
+              ${assetOpts('fromId', x.fromId, '선택해주세요')}</label>
+            <label class="field"><span>무엇으로 남았는가</span>
+              ${assetOpts('toId', x.toId, '남는 자산 없음')}</label>
+            <label class="field"><span>함께 받은 대출</span>
+              ${assetOpts('debtId', x.debtId, '대출 없음')}</label>
+            <label class="field"><span>대출 금액</span>
+              <input name="debtAmount" inputmode="numeric" value="${num(x.debtAmount)}"></label>
+            <label class="field wide"><span>메모</span>
+              <input name="memo" value="${esc(x.memo)}"></label>
+            <div class="item-actions">
+              <button class="secondary" type="submit">저장하고 자산에 반영</button>
+              <button class="ghost" type="button" data-close-row>접기</button>
+              <button class="danger" type="button" data-delete="bigSpend" data-id="${x.id}">삭제</button>
+            </div>
+            <p class="note wide">저장하면 그 달부터 자산 잔액이 자동으로 바뀝니다.
+              빠지는 자산은 줄고, 남는 자산과 대출은 늘어납니다.</p>
+          </form>`;
+      }).join('');
   }
 
   function assetsView() {
@@ -1410,7 +1655,7 @@
       <section class="page">
         <div class="page-head">
           <div><span class="eyebrow">자산</span><h2>보유 자산·부채</h2></div>
-          <button class="secondary" type="button" data-add="asset">항목 추가</button>
+          ${presetPicker('asset', '자산·부채 추가')}
         </div>
 
         <div class="grid three">
@@ -1423,10 +1668,24 @@
             <small>포캐스팅으로 이동</small></button>
         </div>
 
+        ${netTrend()}
+
         <article class="card">
           <div class="card-head"><h3>항목별 관리</h3>
             <span class="note">자산 합계 − 부채 합계 = 순자산</span></div>
           <div class="list">${assetRows()}</div>
+          <p class="note">항목을 눌러 그 달 잔액을 기록하시면 추이에 쌓입니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h3>목돈 지출</h3>
+              <small>집·차처럼 큰 지출을 자산 이동으로 남깁니다</small>
+            </div>
+            <button class="accent-btn" type="button" data-add="bigSpend">지출 기록</button>
+          </div>
+          <div class="list">${bigSpendRows()}</div>
         </article>
 
         <datalist id="assetCategoryList">
@@ -1641,7 +1900,7 @@
               <h3>${title}</h3>
               <small>${monthLabel(app.month)} 기준 합계 ${won(monthTotal)}</small>
             </div>
-            <button class="secondary" type="button" data-add="${kind}">항목 추가</button>
+            ${presetPicker(kind)}
           </div>
           <div class="list">${historyRows(kind, list, opts)}</div>
           <p class="note">항목을 누르면 펼쳐집니다. 금액을 바꾸면
@@ -2015,19 +2274,19 @@
 
         <article class="card">
           <div class="card-head"><h3>통장</h3>
-            <button class="secondary" type="button" data-add="account">통장 추가</button></div>
+            ${presetPicker('account', '통장 추가')}</div>
           <div class="list">${accountRows()}</div>
         </article>
 
         <article class="card">
           <div class="card-head"><h3>연동 카드</h3>
-            <button class="secondary" type="button" data-add="card">카드 추가</button></div>
+            ${presetPicker('card', '카드 추가')}</div>
           <div class="list">${cardRows()}</div>
         </article>
 
         <article class="card">
           <div class="card-head"><h3>자동이체</h3>
-            <button class="secondary" type="button" data-add="flow">이체 추가</button></div>
+            ${presetPicker('flow', '이체 추가')}</div>
           <div class="list">${flowRows()}</div>
         </article>
       </section>`;
@@ -2160,10 +2419,16 @@
     const saved = !!(app.state.defaults &&
       SEED_KEYS.some(k => Array.isArray(app.state.defaults[k]) && app.state.defaults[k].length));
 
+    // 각 줄에서 그 항목을 실제로 고치는 화면으로 바로 갈 수 있게 한다
     const rows = [
-      ['정기소득', 'recurringIncomes'], ['월 고정비', 'fixedCosts'], ['공과금', 'utilities'],
-      ['적금·저축', 'savings'], ['생활비 예산', 'budgets'],
-      ['통장', 'accounts'], ['연동 카드', 'cards'], ['자동이체', 'flows']
+      ['정기소득', 'recurringIncomes', 'settings:income'],
+      ['월 고정비', 'fixedCosts', 'settings:fixed'],
+      ['공과금', 'utilities', 'settings:utility'],
+      ['적금·저축', 'savings', 'settings:saving'],
+      ['생활비 예산', 'budgets', 'settings:budget'],
+      ['통장', 'accounts', 'flow'],
+      ['연동 카드', 'cards', 'flow'],
+      ['자동이체', 'flows', 'flow']
     ];
     const sumOf = key => (def[key] || []).reduce((s, x) =>
       s + (x.history ? historyValue(x.history, app.month)
@@ -2188,8 +2453,8 @@
           <div class="card-head"><h3>지금 기본값에 담긴 것</h3>
             <span class="note">${app.month} 기준</span></div>
           <div class="list">
-            ${rows.map(([label, key]) => `
-              <div class="row-brief static">
+            ${rows.map(([label, key, goto]) => `
+              <button type="button" class="row-brief" data-goto="${goto}">
                 <span class="brief-main"><b>${label}</b>
                   <small>${(def[key] || []).map(x => esc(x.name)).slice(0, 4).join(' · ')}${
                     (def[key] || []).length > 4 ? ` 외 ${(def[key] || []).length - 4}건` : ''}</small>
@@ -2197,7 +2462,8 @@
                 <span class="brief-amount">${(def[key] || []).length}건${
                   ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'budgets'].includes(key)
                     ? `<small class="sub-amt">${won(sumOf(key))}</small>` : ''}</span>
-              </div>`).join('')}
+                <span class="brief-arrow">${icon('chevron', 18)}</span>
+              </button>`).join('')}
           </div>
         </article>
 
@@ -2481,25 +2747,34 @@
       flow: { id, name: '새 자동이체', fromId: app.state.accounts[0]?.id || '',
               toId: '', day: 1, amount: 0, memo: '' },
       asset: { id, name: '새 자산', kind: 'asset', category: '기타', owner: '공동',
-               amount: 0, asOf: ymd(today()), memo: '' },
+               history: [{ from: app.month, amount: 0 }], amount: 0,
+               asOf: ymd(today()), memo: '' },
       // 부부가 함께 쓰는 돈이 대부분이므로 사용자는 공동을 기본으로 둔다
       bonus: { id, name: '새 보너스', owner: '공동',
                date: defaultDate, amount: 0, memo: '' },
       transaction: { id, date: defaultDate, owner: '공동',
-                     category: '기타', place: '', amount: 0, memo: '' },
+                     category: '생활비', place: '', amount: 0, memo: '' },
       scenario: { id, name: '새 시나리오', startMonth: app.month, months: 12,
                   annualReturn: 3, monthlyAdjustment: 0, savingIds: null,
                   assetIds: null, debtIds: null, includeBonus: false, goalId: '' },
-      goal: { id, name: '새 목표', target: 0, dueDate: '', scenarioId: '', memo: '' }
+      goal: { id, name: '새 목표', target: 0, dueDate: '', scenarioId: '', memo: '' },
+      bigSpend: { id, name: '새 목돈 지출', month: app.month, amount: 0,
+                  fromId: app.state.assets.find(a => a.kind === 'asset')?.id || '',
+                  toId: '', debtId: '', debtAmount: 0, memo: '' }
     };
     return map[kind] || null;
   }
 
-  async function addEntity(kind) {
+  async function addEntity(kind, presetName) {
     const entity = newEntity(kind);
     if (!entity) return;
+    if (presetName) {
+      entity.name = presetName;
+      // 자산 목록에서 대출류를 고르면 부채로 잡아 준다
+      if (kind === 'asset' && /대출|카드 미결제|부채/.test(presetName)) entity.kind = 'debt';
+    }
     // 새로 만든 항목은 바로 펼쳐서 입력할 수 있게 한다
-    if (['income', 'fixed', 'utility', 'saving', 'budget'].includes(kind)) {
+    if (['income', 'fixed', 'utility', 'saving', 'budget', 'asset', 'bigSpend'].includes(kind)) {
       app.openRow = `${kind}:${entity.id}`;
     }
     await mutate(
@@ -2612,9 +2887,21 @@
           x.kind = d.get('kind') === 'debt' ? 'debt' : 'asset';
           x.category = String(d.get('category') || '기타').trim();
           x.owner = d.get('owner') || x.owner;
-          x.amount = num(d.get('amount'));
-          x.asOf = d.get('asOf') || x.asOf;
           x.memo = String(d.get('memo') || '').trim();
+          const at = String(d.get('from') || app.month).slice(0, 7);
+          setHistory(x.history, at, d.get('amount'));
+          x.asOf = `${at}-01`;
+
+        } else if (kind === 'bigSpend') {
+          x.name = name;
+          x.month = String(d.get('month') || app.month).slice(0, 7);
+          x.amount = num(d.get('amount'));
+          x.fromId = d.get('fromId') || '';
+          x.toId = d.get('toId') || '';
+          x.debtId = d.get('debtId') || '';
+          x.debtAmount = num(d.get('debtAmount'));
+          x.memo = String(d.get('memo') || '').trim();
+          applyBigSpend(state, x);
 
         } else if (kind === 'bonus') {
           x.name = name;
@@ -2672,6 +2959,34 @@
     app.notice = '';
 
     if (!db) throw new Error('Supabase 설정이 없습니다. config.js를 확인해주세요.');
+
+    if (app.authMode === 'keyreset') {
+      const code = String(d.get('code') || '').trim().toUpperCase();
+      const secret = String(d.get('secret') || '').trim();
+      if (!code || !secret) throw new Error('공유코드와 연결키를 모두 입력해주세요.');
+      if (password.length < 6) throw new Error('비밀번호는 6자 이상이어야 합니다.');
+
+      const { data, error } = await db.rpc('clv_reset_password_with_key', {
+        p_space_code: code,
+        p_secret_hash: await sha256(secret),
+        p_email: email,
+        p_new_password: password
+      });
+      if (error) throw error;
+      if (data !== true) {
+        throw new Error('공유코드·연결키·이메일 중 맞지 않는 값이 있습니다. 다시 확인해주세요.');
+      }
+      // 바뀐 비밀번호로 곧바로 들어간다
+      const { error: loginError } = await db.auth.signInWithPassword({ email, password });
+      if (loginError) {
+        app.notice = '비밀번호를 바꿨습니다. 새 비밀번호로 로그인해주세요.';
+        app.authMode = 'login';
+        render();
+        return;
+      }
+      await afterLogin();
+      return;
+    }
 
     if (app.authMode === 'reset') {
       const { error } = await db.auth.resetPasswordForEmail(email, {
@@ -2906,7 +3221,7 @@
       await mutate(
         state => {
           state.transactions.push({
-            id, date, owner: '공동', category: '기타',
+            id, date, owner: '공동', category: '생활비',
             place: '', amount: 0, memo: ''
           });
         },
@@ -2931,7 +3246,7 @@
       await mutate(
         state => {
           state.transactions.push({
-            id, date, owner: '공동', category: '기타',
+            id, date, owner: '공동', category: '생활비',
             place: '', amount: 0, memo: ''
           });
         },
@@ -3126,6 +3441,10 @@
     const bv = t.closest('[data-budget-view]');
     if (bv) { app.budgetView = bv.dataset.budgetView; render(); return; }
 
+    if (t.closest('[data-cancel-password]')) {
+      app.passwordReturn = ''; app.screen = 'app'; app.lastError = ''; render(); return;
+    }
+
     if (t.closest('[data-undo]')) { await undoLast(); return; }
 
     if (t.closest('[data-save-defaults]')) {
@@ -3167,15 +3486,12 @@
       return;
     }
 
+    // 비밀번호 변경은 브라우저 기본 창 대신 제대로 된 화면에서 받는다
     if (t.closest('[data-change-password]')) {
-      const pw = prompt('새 비밀번호를 입력해주세요. (6자 이상)');
-      if (pw === null) return;
-      if (String(pw).length < 6) { toast('비밀번호는 6자 이상이어야 합니다.'); return; }
-      try {
-        const { error } = await db.auth.updateUser({ password: String(pw) });
-        if (error) throw error;
-        toast('비밀번호를 변경했습니다.');
-      } catch (err) { toast(err.message || '변경하지 못했습니다.'); }
+      app.screen = 'newPassword';
+      app.passwordReturn = 'app';
+      app.lastError = '';
+      render();
       return;
     }
 
@@ -3241,6 +3557,21 @@
       return;
     }
 
+    const preset = t.closest('[data-add-preset]');
+    if (preset) {
+      const kind = preset.dataset.addPreset;
+      let name = t.value;
+      preset.selectedIndex = 0;              // 다음에 또 고를 수 있게 되돌린다
+      if (!name) return;
+      if (name === '__custom') {
+        name = prompt('새 항목 이름을 입력해주세요.') || '';
+        if (!String(name).trim()) return;
+        name = String(name).trim();
+      }
+      addEntity(kind, name);
+      return;
+    }
+
     const txFilter = t.closest('[data-tx-filter]');
     if (txFilter) {
       app.txFilter = app.txFilter || { owner: '', category: '' };
@@ -3272,8 +3603,15 @@
         const { error } = await db.auth.updateUser({ password: pw });
         if (error) throw error;
         app.lastError = '';
-        toast('비밀번호를 변경했습니다.');
-        await afterLogin();
+        if (app.passwordReturn) {
+          app.passwordReturn = '';
+          app.screen = 'app';
+          render();
+          toast('비밀번호를 변경했습니다.');
+        } else {
+          toast('비밀번호를 변경했습니다.');
+          await afterLogin();
+        }
         return;
       }
       if (form.id === 'createSpaceForm') { await createSpace(form); return; }
