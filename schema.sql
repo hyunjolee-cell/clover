@@ -129,11 +129,14 @@ create function public.clv_create_space(
   p_device_id    text,
   p_initial_state jsonb
 )
-returns table(space_code text, version bigint)
+returns table(out_space_code text, out_version bigint)
 language plpgsql
 security definer
 set search_path = public
 as $$
+-- 반환 컬럼 이름을 out_ 로 둔 이유:
+-- space_code 로 두면 clv_members 의 같은 이름 컬럼과 충돌해
+-- on conflict 절에서 "column reference is ambiguous" 오류가 난다.
 declare
   v_uid  uuid := auth.uid();
   v_code text := upper(trim(p_space_code));
@@ -474,7 +477,7 @@ where table_schema = 'public'
 union all
 select 'functions', count(*), 9
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-where n.nspname = 'public' and p.proname like 'cf\_%'
+where n.nspname = 'public' and p.proname like 'clv\_%'
 union all
 select 'realtime', count(*), 1
 from pg_publication_tables
