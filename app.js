@@ -218,11 +218,12 @@
     /* 통장과 이체 규칙 — 신영 통장관리 시트(25.11) 구조를 그대로 옮겼다.
        자금 흐름 탭에서 화살표로 그려진다. */
     const acc = (name, owner, kind, memo = '') => ({ id: uid(), name, owner, kind, memo });
-    const salary = acc('신영 월급통장', '신영', 'salary', '수입이 들어오는 통장');
+    const hjSalary = acc('현조 월급통장', '현조', 'salary', '월급이 들어오는 통장');
+    const salary = acc('신영 월급통장', '신영', 'salary', '생활비·저축이 나가는 중심 통장');
     const personal = acc('신영 개인통장', '신영', 'spending', '생활비 사용');
     const shared = acc('공용 통장 (공카)', '공동', 'shared', '주거비·공과금');
     const bank = acc('케이뱅크', '공동', 'saving', '적금 모음');
-    s.accounts = [salary, personal, shared, bank];
+    s.accounts = [hjSalary, salary, personal, shared, bank];
 
     s.cards = [
       { id: uid(), name: '국민카드', accountId: personal.id, memo: '개인 생활비 결제' },
@@ -232,6 +233,8 @@
     const flow = (name, fromId, toId, day, amount, memo = '') =>
       ({ id: uid(), name, fromId, toId, day, amount, memo });
     s.flows = [
+      flow('현조 → 신영 생활비 이체', hjSalary.id, salary.id, 25, 2600000,
+           '현조님 월급에서 신영님 통장으로 매달 보내는 금액'),
       flow('생활비 이체', salary.id, personal.id, 26, 670000, '용돈·점심·교통·미용'),
       flow('공용통장 이체', salary.id, shared.id, 30, 856000, '전세대출·관리비·TV수신료·삼성카드'),
       flow('적금통장 이체', salary.id, bank.id, 27, 850000,
@@ -1628,8 +1631,22 @@
         </div>`;
     };
 
-    const branch = f => {
+    /* 통장에서 통장으로 이어지는 흐름을 끝까지 따라간다.
+       한 번 그린 통장은 다시 그리지 않아 순환이 생겨도 멈추지 않는다. */
+    const node = (acc, visited, depth) => {
+      const outs = outgoing(acc.id);
+      const total = outs.reduce((s, f) => s + num(f.amount), 0);
+      return `
+        ${box(acc, total)}
+        ${outs.length ? `<div class="flow-children">
+          ${outs.map(f => branch(f, visited, depth + 1)).join('')}
+        </div>` : ''}`;
+    };
+
+    const branch = (f, visited, depth) => {
       const target = app.state.accounts.find(a => a.id === f.toId);
+      const canExpand = target && !visited.has(target.id) && depth < 4;
+      if (target) visited.add(target.id);
       return `
         <div class="flow-branch">
           <div class="flow-arrow">
@@ -1638,30 +1655,41 @@
             <span class="flow-amount">${won(f.amount)}</span>
           </div>
           <div class="flow-target">
-            ${target ? box(target, outgoing(target.id).reduce((s, x) => s + num(x.amount), 0))
-                     : `<div class="flow-box leaf">
-                          <div class="flow-box-head">
-                            <span class="flow-icon">📥</span>
-                            <div><b>${esc(f.name)}</b><small>바로 납입</small></div>
-                          </div>
-                        </div>`}
+            ${canExpand ? node(target, visited, depth)
+              : target ? box(target, 0)
+              : `<div class="flow-box leaf">
+                   <div class="flow-box-head">
+                     <span class="flow-icon">📥</span>
+                     <div><b>${esc(f.name)}</b><small>바로 납입</small></div>
+                   </div>
+                 </div>`}
             ${f.memo ? `<small class="flow-memo">${esc(f.memo)}</small>` : ''}
           </div>
         </div>`;
     };
 
-    return roots.map(root => {
+    // 다른 통장에서 돈을 받는 통장은 그 상위 통장 아래에 그려지므로 시작점에서 뺀다
+    const receiving = new Set(app.state.flows.map(f => f.toId).filter(Boolean));
+    const starts = roots.filter(a => !receiving.has(a.id));
+    const trees = starts.length ? starts : roots;
+
+    return trees.map((root, idx) => {
       const outs = outgoing(root.id);
       const total = outs.reduce((s, f) => s + num(f.amount), 0);
-      const inflow = app.state.recurringIncomes
-        .filter(i => i.owner === root.owner || root.owner === '공동')
-        .reduce((s, i) => s + historyValue(i.history, app.month), 0);
+      // 공동 소득은 어느 통장으로 들어오는지 정해져 있지 않아 첫 통장에만 함께 표시한다
+      const incomes = app.state.recurringIncomes.filter(i =>
+        i.owner === root.owner || (idx === 0 && i.owner === '공동'));
+      const inflow = incomes.reduce((s, i) => s + historyValue(i.history, app.month), 0);
+      const visited = new Set([root.id]);
       return `
         <div class="flow-tree">
-          ${inflow ? `<div class="flow-inflow">월 수입 ${won(inflow)} 입금</div>
+          ${inflow ? `
+            <div class="flow-inflow">
+              월 수입 ${won(inflow)} 입금
+              <small>${incomes.map(i => esc(i.name)).join(' · ')}</small>
+            </div>
             <div class="flow-arrow down"><span class="arrow-line vertical"><i></i></span></div>` : ''}
-          ${box(root, total)}
-          <div class="flow-children">${outs.map(branch).join('')}</div>
+          ${node(root, visited, 0)}
           ${outs.length ? `<p class="note flow-sum">
             이 통장에서 매달 나가는 돈 합계 <b>${won(total)}</b></p>` : ''}
         </div>`;

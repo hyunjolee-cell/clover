@@ -715,3 +715,12 @@ button.tiny { min-height: 34px; padding: 0 12px; font-size: 13px; flex-shrink: 0
   .flow-children { grid-template-columns: 1fr 1fr; gap: 18px; }
   .fab { right: 32px; bottom: 96px; }
 }
+
+/* 흐름이 여러 단계로 이어질 때 모바일에서 너무 깊게 밀리지 않도록 조절 */
+.flow-target .flow-target { padding-left: 12px; }
+.flow-target .flow-target .flow-target { padding-left: 8px; }
+.flow-target .flow-arrow { padding-left: 12px; }
+.flow-inflow small {
+  display: block; margin-top: 2px;
+  color: var(--brand-strong); opacity: .85; font-weight: 600; font-size: 12px;
+}
