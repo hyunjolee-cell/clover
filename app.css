@@ -724,3 +724,127 @@ button.tiny { min-height: 34px; padding: 0 12px; font-size: 13px; flex-shrink: 0
   display: block; margin-top: 2px;
   color: var(--brand-strong); opacity: .85; font-weight: 600; font-size: 12px;
 }
+
+/* ============================================================================
+ * 밀도 개선 — 한 화면에 더 많이, 세로 스크롤은 짧게
+ * 넓은 화면에서 목록을 여러 열로 깔고, 행은 접어 둔다.
+ * ========================================================================== */
+
+/* --- 접힌 행 (평소 모습) -------------------------------------------------- */
+
+.row-brief {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 0; padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  text-align: left; font: inherit; cursor: pointer;
+}
+.row-brief:hover { background: var(--brand-soft); border-color: var(--brand); }
+
+.brief-main { flex: 1; min-width: 0; }
+.brief-main b {
+  font-size: 14.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: inline-block; max-width: 100%; vertical-align: middle;
+}
+.brief-main .tag { margin-left: 6px; font-size: 11px; padding: 2px 7px; }
+.brief-main small {
+  display: block; color: var(--text-muted); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brief-amount {
+  font-size: 14.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.brief-arrow { color: var(--text-muted); font-size: 18px; flex-shrink: 0; }
+
+/* --- 펼친 행 -------------------------------------------------------------- */
+
+.item.open {
+  border-color: var(--brand);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.item.open .item-actions button { min-height: 42px; }
+
+/* --- 목록 다열 배치 ------------------------------------------------------- */
+
+.list { grid-template-columns: 1fr; }
+
+/* --- 종류 선택 칩 --------------------------------------------------------- */
+
+.chip-tabs {
+  display: flex; gap: 7px; flex-wrap: wrap;
+}
+.chip-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; padding: 0 14px;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  color: var(--text-soft); font-size: 14px; font-weight: 600;
+  border-radius: 999px;
+}
+.chip-tab:hover { background: var(--surface-soft); }
+.chip-tab.on {
+  background: var(--brand); border-color: var(--brand); color: #fff;
+}
+.chip-count {
+  font-size: 11.5px; font-weight: 700;
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--surface-soft); color: var(--text-soft);
+}
+.chip-tab.on .chip-count { background: rgba(255, 255, 255, .25); color: #fff; }
+
+/* --- 접이식 카드 ---------------------------------------------------------- */
+
+.card.fold { padding: 0; }
+.card.fold summary {
+  padding: 16px 18px; cursor: pointer;
+  font-size: 15.5px; font-weight: 700;
+}
+.card.fold > :not(summary) { padding: 0 18px; }
+.card.fold > :last-child { padding-bottom: 18px; }
+
+/* --- 홈 흐름 줄을 누를 수 있게 ------------------------------------------- */
+
+.flow button {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-height: 0; padding: 11px 8px;
+  background: none; border: none; border-bottom: 1px dashed var(--line);
+  border-radius: 8px; font: inherit; text-align: left; cursor: pointer;
+}
+.flow button:hover { background: var(--brand-soft); }
+.flow button span { color: var(--text-soft); }
+.flow button::after {
+  content: '›'; position: absolute; right: 10px;
+  color: var(--text-muted); opacity: 0;
+}
+.flow { position: relative; }
+
+/* --- 넓은 화면: 여러 열로 깔아 세로 스크롤을 줄인다 ---------------------- */
+
+@media (min-width: 700px) {
+  .list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .item.open, .item { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1000px) {
+  .list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid.three { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .metric strong { font-size: 20px; }
+  .page { padding: 22px 22px 30px; }
+}
+
+@media (min-width: 1300px) {
+  .list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .page { max-width: 1240px; }
+  /* 펼친 편집 폼은 여전히 넓게 쓰되 필드는 4열로 촘촘히 */
+  .item.open { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* 넓은 화면에서 카드 안쪽 여백을 조금 줄여 밀도를 높인다 */
+@media (min-width: 1000px) {
+  .card { padding: 18px 18px; }
+  .row-brief { padding: 11px 13px; }
+  h3 { font-size: 16px; }
+}

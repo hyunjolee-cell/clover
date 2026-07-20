@@ -391,6 +391,8 @@
     tab: 'home',
     month: currentMonth,
     selectedDate: '',      // 달력에서 고른 날짜
+    settingsGroup: 'income', // 설정에서 보고 있는 항목 종류
+    openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
     sync: '준비 중',
     syncTone: 'idle',      // idle | ok | busy | warn | error
     logs: [],
@@ -976,16 +978,23 @@
           <article class="card">
             <div class="card-head"><h3>이번 달 돈의 흐름</h3></div>
             <div class="flow">
-              <div><span>정기소득</span><b>${won(s.base)}</b></div>
-              <div><span>보너스·상여금</span><b>${won(s.bonus)}</b></div>
+              <button type="button" data-goto="settings:income">
+                <span>정기소득</span><b>${won(s.base)}</b></button>
+              <button type="button" data-goto="monthly">
+                <span>보너스·상여금</span><b>${won(s.bonus)}</b></button>
               <div class="sum"><span>총수입</span><b>${won(s.income)}</b></div>
-              <div><span>적금·저축</span><b class="minus">−${won(s.saving)}</b></div>
-              <div><span>월 고정비</span><b class="minus">−${won(s.fixed)}</b></div>
-              <div><span>공과금</span><b class="minus">−${won(s.utility)}</b></div>
-              <div><span>생활비 사용</span><b class="minus">−${won(s.spend)}</b></div>
+              <button type="button" data-goto="settings:saving">
+                <span>적금·저축</span><b class="minus">−${won(s.saving)}</b></button>
+              <button type="button" data-goto="settings:fixed">
+                <span>월 고정비</span><b class="minus">−${won(s.fixed)}</b></button>
+              <button type="button" data-goto="settings:utility">
+                <span>공과금</span><b class="minus">−${won(s.utility)}</b></button>
+              <button type="button" data-goto="monthly">
+                <span>생활비 사용</span><b class="minus">−${won(s.spend)}</b></button>
               <div class="sum"><span>남는 금액</span>
                 <b class="${s.remaining < 0 ? 'minus' : 'plus'}">${won(s.remaining)}</b></div>
             </div>
+            <p class="note">각 줄을 누르면 바로 고칠 수 있는 화면으로 갑니다.</p>
           </article>
 
           <article class="card">
@@ -1129,7 +1138,9 @@
 
   /* --- 13. 화면: 자산·설정 항목 ------------------------------------------- */
 
-  /* 적용 시작월이 있는 항목(정기소득·고정비·적금·예산·공과금 예상값) 공통 행 */
+  /* 적용 시작월이 있는 항목(정기소득·고정비·적금·예산·공과금 예상값) 공통 행.
+     평소에는 이름과 금액만 한 줄로 접어 두고, 누른 행만 펼쳐서 고친다.
+     한 화면에 입력란 수십 개가 늘어서면 정작 고칠 항목을 찾기 어렵기 때문이다. */
   function historyRows(kind, list, opts = {}) {
     if (!list.length) return emptyRow('등록된 항목이 없습니다. 오른쪽 위 추가 버튼을 눌러주세요.');
     const field = kind === 'utility' ? 'estimateHistory' : 'history';
@@ -1137,8 +1148,23 @@
       const history = x[field];
       const applied = historyFrom(history, app.month);
       const value = historyValue(history, app.month);
+      const open = app.openRow === `${kind}:${x.id}`;
+
+      if (!open) {
+        return `
+          <button type="button" class="row-brief" data-open-row="${kind}:${x.id}">
+            <span class="brief-main">
+              <b>${esc(x.name)}</b>
+              ${opts.owner ? `<span class="tag">${esc(x.owner)}</span>` : ''}
+              ${x.memo ? `<small>${esc(x.memo)}</small>` : ''}
+            </span>
+            <span class="brief-amount">${won(value)}</span>
+            <span class="brief-arrow">›</span>
+          </button>`;
+      }
+
       return `
-        <form class="item" data-row="${kind}" data-id="${x.id}">
+        <form class="item open" data-row="${kind}" data-id="${x.id}">
           <label class="field"><span>항목명</span>
             <input name="name" value="${esc(x.name)}"></label>
           ${opts.owner ? `<label class="field"><span>${opts.ownerLabel || '소유자'}</span>
@@ -1150,7 +1176,8 @@
           <label class="field wide"><span>메모</span>
             <input name="memo" value="${esc(x.memo || '')}" placeholder="비고를 적어두면 나중에 도움이 됩니다"></label>
           <div class="item-actions">
-            <button class="secondary" type="submit">수정 저장</button>
+            <button class="secondary" type="submit">저장</button>
+            <button class="ghost" type="button" data-close-row>접기</button>
             <button class="danger" type="button" data-delete="${kind}" data-id="${x.id}">삭제</button>
           </div>
           ${history.length > 1 ? `<details class="history">
@@ -1394,30 +1421,47 @@
         { owner: true, ownerLabel: '대상', amountLabel: '월 예산' }]
     ];
 
+    // 한 번에 한 종류만 보여준다. 다섯 종류를 모두 펼치면 행이 40개를 넘어 찾기 어렵다.
+    const active = groups.some(g => g[0] === app.settingsGroup)
+      ? app.settingsGroup : 'income';
+    const [kind, title, list, opts] = groups.find(g => g[0] === active);
+    const monthTotal = list.reduce((s, x) =>
+      s + historyValue(kind === 'utility' ? x.estimateHistory : x.history, app.month), 0);
+
     return `
       <section class="page">
         <div class="page-head">
-          <div><span class="eyebrow">설정</span><h2>항목·기기 설정</h2></div>
+          <div><span class="eyebrow">설정</span><h2>항목 설정</h2></div>
           ${monthNav()}
         </div>
 
-        <p class="note lead-note">금액을 바꾸면 위에서 고른 <b>적용 시작월</b>부터 반영되고,
-          그 이전 달의 금액은 그대로 유지됩니다.</p>
+        <div class="chip-tabs">
+          ${groups.map(([k, t, l]) => `
+            <button type="button" class="chip-tab ${k === active ? 'on' : ''}"
+                    data-settings-group="${k}">
+              ${t}<span class="chip-count">${l.length}</span>
+            </button>`).join('')}
+        </div>
 
         <article class="card">
-          <div class="card-head"><h3>기존 가계부 기본값</h3></div>
-          <p class="note">쓰시던 가계부(25.10)의 정기소득·월 고정비·공과금·적금·생활비 예산을
-            한 번에 불러옵니다. 불러온 뒤에도 항목마다 자유롭게 고치고 지울 수 있습니다.</p>
-          <p class="note">생활비 사용내역·보너스·자산·목표와 변경 로그는 건드리지 않습니다.</p>
-          <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
+          <div class="card-head">
+            <div>
+              <h3>${title}</h3>
+              <small>${monthLabel(app.month)} 기준 합계 ${won(monthTotal)}</small>
+            </div>
+            <button class="secondary" type="button" data-add="${kind}">항목 추가</button>
+          </div>
+          <div class="list">${historyRows(kind, list, opts)}</div>
+          <p class="note">항목을 누르면 펼쳐집니다. 금액을 바꾸면
+            <b>적용 시작월</b>부터 반영되고 그 이전 달 금액은 그대로 남습니다.</p>
         </article>
 
-        ${groups.map(([kind, title, list, opts]) => `
-          <article class="card">
-            <div class="card-head"><h3>${title}</h3>
-              <button class="secondary" type="button" data-add="${kind}">항목 추가</button></div>
-            <div class="list">${historyRows(kind, list, opts)}</div>
-          </article>`).join('')}
+        <details class="card fold">
+          <summary>기존 가계부 기본값 불러오기</summary>
+          <p class="note">쓰시던 가계부(25.10)의 정기소득·월 고정비·공과금·적금·생활비 예산을
+            한 번에 불러옵니다. 생활비 사용내역·보너스·자산·목표와 변경 로그는 그대로 둡니다.</p>
+          <button class="secondary" type="button" data-load-seed>기본값 불러오기</button>
+        </details>
 
         <article class="card">
           <div class="card-head"><h3>이 휴대폰</h3></div>
@@ -2056,6 +2100,10 @@
   async function addEntity(kind) {
     const entity = newEntity(kind);
     if (!entity) return;
+    // 새로 만든 항목은 바로 펼쳐서 입력할 수 있게 한다
+    if (['income', 'fixed', 'utility', 'saving', 'budget'].includes(kind)) {
+      app.openRow = `${kind}:${entity.id}`;
+    }
     await mutate(
       state => { listOf(kind, state).push(clone(entity)); },
       {
@@ -2212,6 +2260,8 @@
         success: '수정했습니다.'
       }
     );
+    // 저장하면 다시 접어 목록을 짧게 유지한다
+    if (app.openRow === `${kind}:${id}`) { app.openRow = null; render(); }
   }
 
   /* --- 19. 인증·공간 연결 ------------------------------------------------- */
@@ -2382,6 +2432,42 @@
     if (shift) { app.month = shiftMonth(app.month, num(shift.dataset.shift)); render(); return; }
 
     if (t.closest('[data-apply-live]')) { render(); return; }
+
+    // 홈의 흐름 줄에서 해당 설정 화면으로 바로 이동
+    const goto = t.closest('[data-goto]');
+    if (goto) {
+      const [tab, group] = goto.dataset.goto.split(':');
+      app.tab = tab;
+      if (group) app.settingsGroup = group;
+      app.openRow = null;
+      render();
+      window.scrollTo({ top: 0 });
+      return;
+    }
+
+    const groupTab = t.closest('[data-settings-group]');
+    if (groupTab) {
+      app.settingsGroup = groupTab.dataset.settingsGroup;
+      app.openRow = null;
+      render();
+      return;
+    }
+
+    // 접힌 행을 펼치고 금액 칸에 바로 커서를 둔다
+    const openRow = t.closest('[data-open-row]');
+    if (openRow) {
+      app.openRow = openRow.dataset.openRow;
+      render();
+      const form = document.querySelector(
+        `form[data-row="${app.openRow.split(':')[0]}"][data-id="${app.openRow.split(':')[1]}"]`);
+      form?.scrollIntoView({ block: 'center' });
+      const amount = form?.querySelector('input[name="amount"]');
+      amount?.focus();
+      amount?.select();
+      return;
+    }
+
+    if (t.closest('[data-close-row]')) { app.openRow = null; render(); return; }
 
     const pickDate = t.closest('[data-pick-date]');
     if (pickDate) {
