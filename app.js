@@ -128,30 +128,75 @@
     };
   }
 
+  /* 공유공간을 처음 만들 때 채워 넣는 기본값.
+     기존에 쓰던 가계부(가계부_25.10)의 예산표를 그대로 옮겨 담았다.
+     모든 항목은 앱에서 자유롭게 수정·삭제할 수 있다. */
   function seedState() {
     const s = emptyState();
     const h = amount => [{ from: currentMonth, amount }];
+    const income = (name, owner, amount) => ({ id: uid(), name, owner, history: h(amount) });
+    const util = (name, amount) => ({ id: uid(), name, estimateHistory: h(amount) });
+
     s.recurringIncomes = [
-      { id: uid(), name: '현조 월급', owner: '현조', history: h(0) },
-      { id: uid(), name: '신영 월급', owner: '신영', history: h(0) }
+      income('이현조 월급', '현조', 5000000),
+      income('위신영 월급', '신영', 2830000),
+      income('기타소득', '공동', 130000)
     ];
-    s.fixedCosts = [{ id: uid(), name: '월세', owner: '공동', history: h(0) }];
+
+    s.fixedCosts = [
+      income('통신비 (인터넷·티비·유튜브)', '현조', 105000),
+      income('암보험', '현조', 140000),
+      income('실비보험', '현조', 109000),
+      income('자동차보험', '현조', 170000),
+      income('통신비', '신영', 28600),
+      income('유튜브 등 구독료', '신영', 14900),
+      income('실비보험', '신영', 50000),
+      income('암보험', '신영', 113755),
+      income('전세대출', '공동', 492600),
+      income('정수기', '공동', 38000),
+      income('TV 수신료', '공동', 2500)
+    ];
+
     s.utilities = [
-      { id: uid(), name: '전기세', estimateHistory: h(0) },
-      { id: uid(), name: '수도세', estimateHistory: h(0) },
-      { id: uid(), name: '도시가스', estimateHistory: h(0) },
-      { id: uid(), name: '관리비', estimateHistory: h(0) }
+      util('전기세', 74263),
+      util('수도세', 12480),
+      util('도시가스', 31030),
+      util('관리비', 48000),
+      util('인터넷', 0)
     ];
-    s.savings = [{ id: uid(), name: '주택청약', owner: '공동', history: h(0) }];
-    s.assets = [
-      { id: uid(), name: '입출금 계좌', kind: 'asset', category: '현금', owner: '공동',
-        amount: 0, asOf: ymd(today()), memo: '' }
+
+    s.savings = [
+      income('청년적금', '현조', 500000),
+      income('청년적금', '신영', 500000),
+      income('주택청약', '현조', 100000),
+      income('주택청약', '신영', 100000),
+      income('집마련적금', '공동', 2050000),
+      income('부모님적금', '공동', 500000),
+      income('비상금적금', '공동', 120000),
+      income('여행적금', '공동', 100000),
+      income('옷적금', '공동', 100000),
+      income('조카적금', '공동', 30000)
     ];
+
+    // 개인 생활비 중 보험·통신처럼 고정된 금액은 월 고정비로 옮겼고,
+    // 용돈·점심·교통비처럼 쓰는 만큼 달라지는 항목만 예산으로 잡았다.
     s.budgets = [
-      { id: uid(), name: '현조 생활비', owner: '현조', history: h(0) },
-      { id: uid(), name: '신영 생활비', owner: '신영', history: h(0) },
-      { id: uid(), name: '공동 생활비', owner: '공동', history: h(0) }
+      income('현조 생활비 (용돈·점심·미용·화장품·교통)', '현조', 876000),
+      income('신영 생활비 (용돈·점심·교통·미용)', '신영', 670000),
+      income('공동 생활비 (외식·생필품)', '공동', 750000)
     ];
+
+    // 보유 자산과 부채는 기존 가계부에 금액이 적혀 있지 않아 비워 둔다.
+    // 자산 탭에서 실제 잔액을 넣으면 순자산과 포캐스팅에 바로 반영된다.
+    s.assets = [];
+
+    s.scenarios = [{
+      id: uid(), name: '1년 계획', startMonth: currentMonth, months: 12,
+      annualReturn: 3, monthlyAdjustment: 0,
+      savingIds: null, assetIds: null, debtIds: null,
+      includeBonus: false, goalId: ''
+    }];
+
     return s;
   }
 
