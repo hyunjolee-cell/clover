@@ -404,7 +404,8 @@
     channel: null,
     pollTimer: null,
     deferredRender: false,
-    lastError: ''
+    lastError: '',
+    notice: ''
   };
 
   function loadDevice() {
@@ -853,34 +854,73 @@
   /* --- 9. 화면: 로그인 ---------------------------------------------------- */
 
   function authView() {
-    const signup = app.authMode === 'signup';
+    const mode = app.authMode;                 // login | signup | reset
+    const lead = {
+      login: '가입한 이메일로 로그인합니다.',
+      signup: '이메일과 비밀번호로 계정을 만듭니다.',
+      reset: '가입한 이메일로 비밀번호 재설정 링크를 보내드립니다.'
+    }[mode];
+
     return `
       <main class="center">
         <section class="center-card">
           <div class="logo">🍀</div>
           <h1>CLOVER</h1>
-          <p class="lead">부부가 함께 쓰는 자산관리 앱입니다.<br>
-            ${signup ? '이메일과 비밀번호로 계정을 만듭니다.' : '가입한 이메일로 로그인합니다.'}</p>
+          <p class="lead">부부가 함께 쓰는 자산관리 앱입니다.<br>${lead}</p>
           ${app.lastError ? `<p class="alert">${esc(app.lastError)}</p>` : ''}
+          ${app.notice ? `<p class="notice">${esc(app.notice)}</p>` : ''}
+
           <form id="authForm" class="stack">
             <label class="field">
               <span>이메일</span>
               <input name="email" type="email" autocomplete="email" required
                      placeholder="example@mail.com">
             </label>
-            <label class="field">
-              <span>비밀번호</span>
-              <input name="password" type="password" minlength="6" required
-                     autocomplete="${signup ? 'new-password' : 'current-password'}"
-                     placeholder="6자 이상">
-            </label>
+            ${mode === 'reset' ? '' : `
+              <label class="field">
+                <span>비밀번호</span>
+                <input name="password" type="password" minlength="6" required
+                       autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}"
+                       placeholder="6자 이상">
+              </label>`}
             <button class="primary" type="submit">
-              ${signup ? '가입하고 시작하기' : '로그인'}
+              ${mode === 'signup' ? '가입하고 시작하기'
+                : mode === 'reset' ? '재설정 링크 받기' : '로그인'}
             </button>
           </form>
-          <button class="link" type="button" data-auth-mode="${signup ? 'login' : 'signup'}">
-            ${signup ? '이미 계정이 있습니다 · 로그인' : '처음이신가요? 계정 만들기'}
-          </button>
+
+          <div class="auth-links">
+            ${mode === 'login' ? `
+              <button class="link" type="button" data-auth-mode="signup">처음이신가요? 계정 만들기</button>
+              <button class="link" type="button" data-auth-mode="reset">비밀번호를 잊으셨나요?</button>`
+            : `<button class="link" type="button" data-auth-mode="login">로그인 화면으로</button>`}
+          </div>
+        </section>
+      </main>`;
+  }
+
+  /* 메일로 받은 링크를 눌러 들어왔을 때 새 비밀번호를 정하는 화면 */
+  function newPasswordView() {
+    return `
+      <main class="center">
+        <section class="center-card">
+          <div class="logo">🔑</div>
+          <h1>새 비밀번호 설정</h1>
+          <p class="lead">앞으로 사용할 비밀번호를 입력해주세요.</p>
+          ${app.lastError ? `<p class="alert">${esc(app.lastError)}</p>` : ''}
+          <form id="newPasswordForm" class="stack">
+            <label class="field">
+              <span>새 비밀번호</span>
+              <input name="password" type="password" minlength="6" required
+                     autocomplete="new-password" placeholder="6자 이상">
+            </label>
+            <label class="field">
+              <span>새 비밀번호 확인</span>
+              <input name="confirm" type="password" minlength="6" required
+                     autocomplete="new-password" placeholder="한 번 더 입력">
+            </label>
+            <button class="primary" type="submit">비밀번호 변경</button>
+          </form>
         </section>
       </main>`;
   }
@@ -1876,6 +1916,7 @@
           </div>
           <div class="row wrap">
             <button class="secondary" type="button" data-manual-sync>수동 동기화</button>
+            <button class="secondary" type="button" data-change-password>비밀번호 변경</button>
             <button class="danger" type="button" data-signout>로그아웃</button>
           </div>
         </article>
@@ -2053,6 +2094,8 @@
         </section></main>`;
     } else if (app.screen === 'auth') {
       root.innerHTML = authView();
+    } else if (app.screen === 'newPassword') {
+      root.innerHTML = newPasswordView();
     } else if (app.screen === 'space') {
       root.innerHTML = spaceView();
     } else {
@@ -2271,8 +2314,23 @@
     const email = String(d.get('email') || '').trim();
     const password = String(d.get('password') || '');
     app.lastError = '';
+    app.notice = '';
 
     if (!db) throw new Error('Supabase 설정이 없습니다. config.js를 확인해주세요.');
+
+    if (app.authMode === 'reset') {
+      const { error } = await db.auth.resetPasswordForEmail(email, {
+        redirectTo: location.origin + location.pathname
+      });
+      if (error) throw error;
+      app.notice =
+        `${email} 로 재설정 링크를 보냈습니다. ` +
+        `메일의 링크를 누르면 새 비밀번호를 정하는 화면이 열립니다. ` +
+        `메일이 보이지 않으면 스팸함도 확인해주세요.`;
+      app.authMode = 'login';
+      render();
+      return;
+    }
 
     if (app.authMode === 'signup') {
       const { data, error } = await db.auth.signUp({ email, password });
@@ -2683,6 +2741,18 @@
       return;
     }
 
+    if (t.closest('[data-change-password]')) {
+      const pw = prompt('새 비밀번호를 입력해주세요. (6자 이상)');
+      if (pw === null) return;
+      if (String(pw).length < 6) { toast('비밀번호는 6자 이상이어야 합니다.'); return; }
+      try {
+        const { error } = await db.auth.updateUser({ password: String(pw) });
+        if (error) throw error;
+        toast('비밀번호를 변경했습니다.');
+      } catch (err) { toast(err.message || '변경하지 못했습니다.'); }
+      return;
+    }
+
     if (t.closest('[data-manual-sync]')) {
       setSync('수동 동기화 중', 'busy'); render();
       try { await readSpace({ force: true }); await flushPending(); toast('최신 상태로 맞췄습니다.'); }
@@ -2767,6 +2837,19 @@
     const form = e.target;
     try {
       if (form.id === 'authForm') { await handleAuth(form); return; }
+
+      if (form.id === 'newPasswordForm') {
+        const d = new FormData(form);
+        const pw = String(d.get('password') || '');
+        if (pw !== String(d.get('confirm') || ''))
+          throw new Error('두 비밀번호가 서로 다릅니다.');
+        const { error } = await db.auth.updateUser({ password: pw });
+        if (error) throw error;
+        app.lastError = '';
+        toast('비밀번호를 변경했습니다.');
+        await afterLogin();
+        return;
+      }
       if (form.id === 'createSpaceForm') { await createSpace(form); return; }
       if (form.id === 'joinSpaceForm') { await joinSpace(form); return; }
       if (form.dataset.row) { await saveRow(form); return; }
@@ -2790,11 +2873,19 @@
       return;
     }
 
-    db.auth.onAuthStateChange((event) => {
+    db.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         stopRealtime();
         app.session = null; app.space = null;
         app.screen = 'auth';
+        render();
+      }
+      // 메일의 재설정 링크로 들어온 경우
+      if (event === 'PASSWORD_RECOVERY') {
+        stopRealtime();
+        app.session = session;
+        app.screen = 'newPassword';
+        app.lastError = '';
         render();
       }
     });
