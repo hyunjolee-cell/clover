@@ -955,3 +955,32 @@ button.card.metric {
 }
 button.card.metric:hover { background: var(--g50); }
 button.card.metric:active { transform: scale(.99); }
+
+/* 요약 값에서 바로 세부 화면으로 넘어가는 줄 */
+.totals.linked { padding: 0; background: transparent; gap: 6px; }
+.totals.linked button, .totals button {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 0; padding: 13px 14px;
+  background: var(--g50); border: none; border-radius: var(--r-btn);
+  font: inherit; text-align: left; font-variant-numeric: tabular-nums;
+}
+.totals button:hover { background: var(--g100); }
+.totals button b { display: inline-flex; align-items: center; gap: 4px; }
+.totals button b .ico { color: var(--g300); }
+
+button.budget-row {
+  display: block; width: 100%; min-height: 0; padding: 14px;
+  background: var(--g50); border: none; border-radius: var(--r-btn);
+  font: inherit; text-align: left; cursor: pointer;
+}
+button.budget-row:hover { background: var(--g100); }
+button.budget-row .budget-top b { display: inline-flex; align-items: center; gap: 4px; }
+button.budget-row .budget-top b .ico { color: var(--g300); }
+
+button.hero-item {
+  display: block; width: 100%; min-height: 0; padding: 0;
+  background: none; border: none; text-align: left; font: inherit; cursor: pointer;
+  border-radius: var(--r-btn);
+}
+button.hero-item:hover { opacity: .75; }
+button.hero-item:active { transform: none; }

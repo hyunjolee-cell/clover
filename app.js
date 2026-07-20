@@ -952,6 +952,7 @@
             'M12 12c-2.5 0-4.5 1.5-4.5 3.5S9.2 19 11 19s3.2-1.6 3.2-3.5' +
             'M12 12l-1.5 9',
     undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4',
+    book: 'M4 5.5A2 2 0 0 1 6 4h13v14H6a2 2 0 0 0-2 2zM8 8h7M8 11.5h7',
     key: 'M14.5 4a5.5 5.5 0 1 0-4.2 9.3L4 19.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 0 14.5 4z' +
          'M16 8h.01'
   };
@@ -1098,11 +1099,11 @@
             <strong class="${s.remaining < 0 ? 'minus' : ''}">${won(s.remaining)}</strong>
             <small>총수입 − 적금·저축 − 총지출</small>
           </div>
-          <div class="hero-item">
+          <button class="hero-item" type="button" data-goto="assets">
             <small>현재 순자산</small>
             <strong>${won(netAssets())}</strong>
             <small>자산 ${won(assetTotal())} − 부채 ${won(debtTotal())}</small>
-          </div>
+          </button>
         </div>
 
         <div class="grid three">
@@ -1149,22 +1150,24 @@
               <button class="secondary" type="button" data-goto="budgets">예산 세부내역</button>
             </div>
             <div class="budget-list">
-              <div class="budget-row ${over ? 'over' : ''}">
+              <button type="button" class="budget-row ${over ? 'over' : ''}" data-goto="monthly">
                 <div class="budget-top"><span class="own-both-text">외식·생필품 등</span>
-                  <b>${won(sharedUsed)}${s.sharedBudget > 0 ? ` / ${won(s.sharedBudget)}` : ''}</b></div>
+                  <b>${won(sharedUsed)}${s.sharedBudget > 0 ? ` / ${won(s.sharedBudget)}` : ''}
+                    ${icon('chevron', 15)}</b></div>
                 <div class="bar"><i style="width:${Math.min(100, sharedRate)}%"></i></div>
                 <small>${s.sharedBudget > 0
                   ? `예산의 ${sharedRate}% 사용${over ? ' · 예산 초과' : ''}`
                   : '예산 미설정 — 설정에서 추가'}</small>
-              </div>
+              </button>
             </div>
-            <div class="totals" style="margin-top:16px">
-              <div><span class="own-hj-text">현조 생활비</span>
-                <b>${won(budgetByOwner(app.month, '현조'))}</b></div>
-              <div><span class="own-sy-text">신영 생활비</span>
-                <b>${won(budgetByOwner(app.month, '신영'))}</b></div>
+            <div class="totals linked" style="margin-top:16px">
+              <button type="button" data-goto="budgets:현조">
+                <span class="own-hj-text">현조 생활비</span>
+                <b>${won(budgetByOwner(app.month, '현조'))}${icon('chevron', 15)}</b></button>
+              <button type="button" data-goto="budgets:신영">
+                <span class="own-sy-text">신영 생활비</span>
+                <b>${won(budgetByOwner(app.month, '신영'))}${icon('chevron', 15)}</b></button>
             </div>
-            <p class="note">개인 생활비는 사용처를 따로 적지 않고 예산만 관리합니다.</p>
           </article>
         </div>
       </section>`;
@@ -1269,7 +1272,7 @@
           <div class="totals">
             <div><span>이 달 총 사용액</span><b>${won(monthSpend)}</b></div>
             ${OWNERS.map(o =>
-              `<div><span class="${ownerClass(o)}-text">${o}</span><b>${won(spendByOwner(app.month, o))}</b></div>`).join('')}
+              `<button type="button" data-goto="budgets:${o}"><span class="${ownerClass(o)}-text">${o}</span><b>${won(spendByOwner(app.month, o))}${icon('chevron', 14)}</b></button>`).join('')}
           </div>
 
           <div class="list">${transactionRows()}</div>
@@ -1415,8 +1418,9 @@
             <strong>${won(assetTotal())}</strong></article>
           <article class="card metric"><small>총부채</small>
             <strong class="minus">${won(debtTotal())}</strong></article>
-          <article class="card metric"><small>순자산</small>
-            <strong>${won(netAssets())}</strong></article>
+          <button class="card metric" type="button" data-goto="forecast"><small>순자산</small>
+            <strong>${won(netAssets())}</strong>
+            <small>포캐스팅으로 이동</small></button>
         </div>
 
         <article class="card">
@@ -1767,15 +1771,15 @@
         </div>
 
         <div class="grid three">
-          <article class="card metric"><small>이 달 수입</small>
+          <button class="card metric" type="button" data-goto="settings:income"><small>이 달 수입</small>
             <strong>${won(s.income)}</strong>
-            <small>정기 ${won(s.base)} + 보너스 ${won(s.bonus)}</small></article>
-          <article class="card metric"><small>이 달 생활비 사용</small>
+            <small>정기 ${won(s.base)} + 보너스 ${won(s.bonus)}</small></button>
+          <button class="card metric" type="button" data-goto="monthly"><small>이 달 생활비 사용</small>
             <strong class="minus">${won(s.spend)}</strong>
-            <small>${transactionsOf(app.month).length}건</small></article>
-          <article class="card metric"><small>고정 지출·저축</small>
+            <small>${transactionsOf(app.month).length}건</small></button>
+          <button class="card metric" type="button" data-goto="settings:fixed"><small>고정 지출·저축</small>
             <strong class="minus">${won(s.fixed + s.utility + s.saving)}</strong>
-            <small>고정비·공과금·적금</small></article>
+            <small>고정비·공과금·적금</small></button>
         </div>
 
         <article class="card">
@@ -2108,15 +2112,15 @@
         </div>
 
         <div class="grid three">
-          <article class="card metric"><small class="own-hj-text">현조</small>
+          <button class="card metric" type="button" data-budget-view="현조"><small class="own-hj-text">현조</small>
             <strong>${won(sums.현조)}</strong>
-            <small>${total ? Math.round(sums.현조 / total * 100) : 0}%</small></article>
-          <article class="card metric"><small class="own-sy-text">신영</small>
+            <small>${total ? Math.round(sums.현조 / total * 100) : 0}%</small></button>
+          <button class="card metric" type="button" data-budget-view="신영"><small class="own-sy-text">신영</small>
             <strong>${won(sums.신영)}</strong>
-            <small>${total ? Math.round(sums.신영 / total * 100) : 0}%</small></article>
-          <article class="card metric"><small>공동</small>
+            <small>${total ? Math.round(sums.신영 / total * 100) : 0}%</small></button>
+          <button class="card metric" type="button" data-budget-view="공동"><small>공동</small>
             <strong>${won(sums.공동)}</strong>
-            <small>${total ? Math.round(sums.공동 / total * 100) : 0}%</small></article>
+            <small>${total ? Math.round(sums.공동 / total * 100) : 0}%</small></button>
         </div>
 
         <div class="chip-tabs">
@@ -2233,7 +2237,8 @@
       ['flow', 'flow', '자금 흐름', '통장·카드·자동이체를 흐름도로 확인'],
       ['settings', 'settings', '항목 설정', '정기소득·고정비·공과금·적금·예산 관리'],
       ['defaults', 'history', '기본값 관리', '기본값을 확인하고 원하는 대로 바꾸기'],
-      ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록']
+      ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록'],
+      ['guide', 'book', '사용 설명서', '어떤 기능을 언제 쓰는지 한 장으로 정리']
     ];
     return `
       <section class="page">
@@ -2842,11 +2847,19 @@
     if (t.closest('[data-apply-live]')) { render(); return; }
 
     // 홈의 흐름 줄에서 해당 설정 화면으로 바로 이동
+    const guide = t.closest('[data-tab="guide"]');
+    if (guide) { window.open('./guide.html', '_blank', 'noopener'); return; }
+
     const goto = t.closest('[data-goto]');
     if (goto) {
-      const [tab, group] = goto.dataset.goto.split(':');
+      const [tab, arg] = goto.dataset.goto.split(':');
       app.tab = tab;
-      if (group) app.settingsGroup = group;
+      // 화면마다 두 번째 값의 뜻이 다르다. 설정은 항목 종류, 예산은 보기 대상.
+      if (arg) {
+        if (tab === 'settings') app.settingsGroup = arg;
+        else if (tab === 'budgets') app.budgetView = arg;
+        else if (tab === 'calendar') app.selectedDate = arg;
+      }
       app.openRow = null;
       render();
       window.scrollTo({ top: 0 });

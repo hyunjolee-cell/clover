@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#3B6FE0">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap">
+<title>CLOVER 사용 가이드</title>
+</head>
+<body>
+<style>
+  :root {
+    color-scheme: light only;
+    --blue: #3B6FE0;
+    --blue-deep: #1E3A6B;
+    --sky: #E8EFFB;
+    --sky-light: #F4F7FD;
+    --green: #3F9D78;
+    --green-bg: #EAF5EF;
+    --green-text: #1F6B4D;
+    --g50: #FAFAFA;
+    --g100: #F4F4F5;
+    --g200: #E9E9EC;
+    --g300: #DCDCE0;
+    --g400: #A8A8AE;
+    --g500: #78787F;
+    --g700: #3D3D42;
+    --g800: #27272A;
+    --g900: #18181B;
+    --danger: #D26464;
+    --danger-bg: #FBEDED;
+    --danger-text: #9B3838;
+    --warn-bg: #FBF4E6;
+    --warn-text: #8A6A1F;
+    --r: 16px;
+    --sh: 0 1px 3px rgba(27, 27, 31, .05);
+  }
+  @media (prefers-color-scheme: dark) { :root { color-scheme: light only; } }
+  :root[data-theme="dark"], :root[data-theme="light"] { color-scheme: light only; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 40px 20px 72px;
+    background: var(--g50);
+    color: var(--g900);
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont,
+                 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    letter-spacing: -.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 24px; }
+
+  header { display: grid; gap: 8px; margin-bottom: 4px; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    color: var(--blue); font-weight: 700; font-size: 14px; letter-spacing: .02em;
+  }
+  h1 { margin: 0; font-size: 28px; line-height: 1.3; letter-spacing: -.03em; text-wrap: balance; }
+  .sub { margin: 0; color: var(--g500); max-width: 62ch; }
+  .url {
+    display: inline-block; margin-top: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13.5px; color: var(--blue-deep);
+    background: var(--sky); border-radius: 8px; padding: 7px 12px;
+    text-decoration: none;
+  }
+
+  section { background: #fff; border-radius: var(--r); box-shadow: var(--sh); padding: 24px 22px; }
+  h2 {
+    margin: 0 0 4px; font-size: 19px; letter-spacing: -.025em;
+    display: flex; align-items: center; gap: 9px;
+  }
+  h2 .n {
+    display: grid; place-items: center;
+    width: 24px; height: 24px; flex-shrink: 0;
+    background: var(--g900); color: #fff;
+    border-radius: 999px; font-size: 12.5px; font-weight: 700;
+  }
+  .cap { margin: 0 0 18px; color: var(--g500); font-size: 14px; }
+
+  .steps { display: grid; gap: 10px; }
+  .step {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--g50); border-radius: 12px; padding: 15px 16px;
+  }
+  .step .who {
+    flex-shrink: 0; min-width: 62px;
+    font-size: 12px; font-weight: 700;
+    border-radius: 999px; padding: 3px 9px; text-align: center;
+  }
+  .who.hj { background: var(--sky); color: var(--blue-deep); }
+  .who.sy { background: var(--green-bg); color: var(--green-text); }
+  .who.both { background: var(--g100); color: var(--g700); }
+  .step b { display: block; font-size: 14.5px; }
+  .step small { display: block; color: var(--g500); font-size: 13px; margin-top: 2px; }
+
+  .tabs { display: grid; gap: 10px; }
+  .tab {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 15px 16px; border: 1px solid var(--g100); border-radius: 12px;
+  }
+  .tab .ic {
+    display: grid; place-items: center;
+    width: 38px; height: 38px; flex-shrink: 0;
+    background: var(--g100); color: var(--g700); border-radius: 11px;
+  }
+  .tab b { display: block; font-size: 15px; }
+  .tab small { display: block; color: var(--g500); font-size: 13px; margin-top: 1px; }
+
+  .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--g200); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 540px; }
+  thead th {
+    background: var(--g50); color: var(--g500);
+    font-size: 12.5px; font-weight: 600; text-align: left;
+    padding: 11px 14px; border-bottom: 1px solid var(--g200); white-space: nowrap;
+  }
+  tbody td { padding: 13px 14px; border-bottom: 1px solid var(--g100); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { font-weight: 600; color: var(--g900); white-space: nowrap; }
+  tbody td:nth-child(2) { color: var(--g700); }
+  .path {
+    font-size: 13px; color: var(--blue-deep);
+    background: var(--sky-light); border-radius: 7px;
+    padding: 3px 8px; display: inline-block; white-space: nowrap;
+  }
+
+  /* 계산 방식 도식 */
+  .calc { display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+  .calc div {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 11px 4px; border-bottom: 1px solid var(--g100);
+  }
+  .calc div:last-child { border-bottom: none; }
+  .calc span { color: var(--g500); }
+  .calc b { font-weight: 600; }
+  .calc .sum {
+    border-top: 1px solid var(--g300); border-bottom: none;
+    font-weight: 700; margin-top: 4px;
+  }
+  .calc .sum span { color: var(--g900); font-weight: 700; }
+  .minus { color: var(--danger); }
+  .note-inline { color: var(--g400); font-size: 12.5px; }
+
+  .tips { display: grid; gap: 12px; }
+  .tip { display: grid; gap: 3px; padding: 15px 16px; background: var(--g50); border-radius: 12px; }
+  .tip b { font-size: 14.5px; }
+  .tip span { color: var(--g500); font-size: 13.5px; }
+
+  .callout {
+    background: var(--warn-bg); color: var(--warn-text);
+    border-radius: 12px; padding: 16px 17px; font-size: 14px;
+  }
+  .callout b { color: #663C02; }
+  .danger-box {
+    background: var(--danger-bg); color: var(--danger-text);
+    border-radius: 12px; padding: 16px 17px; font-size: 14px;
+  }
+  .info-box {
+    background: var(--sky-light); color: var(--blue-deep);
+    border-radius: 12px; padding: 16px 17px; font-size: 14px;
+  }
+
+  .chip { font-size: 12.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+  .chip.hj { background: var(--sky); color: var(--blue-deep); }
+  .chip.sy { background: var(--green-bg); color: var(--green-text); }
+
+  footer { color: var(--g400); font-size: 13px; text-align: center; padding-top: 4px; }
+
+  @media (max-width: 620px) {
+    body { padding: 28px 15px 56px; }
+    h1 { font-size: 24px; }
+    section { padding: 20px 17px; }
+    .step { flex-direction: column; gap: 7px; }
+    .step .who { min-width: 0; align-self: flex-start; }
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    section { box-shadow: none; border: 1px solid var(--g200); break-inside: avoid; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 12c0-2.5-1.5-4.5-3.5-4.5S5 9.2 5 11s1.6 3.2 3.5 3.2M12 12c2.5 0 4.5-1.5 4.5-3.5S14.8 5 13 5s-3.2 1.6-3.2 3.5M12 12c0 2.5 1.5 4.5 3.5 4.5S19 14.8 19 13s-1.6-3.2-3.5-3.2M12 12c-2.5 0-4.5 1.5-4.5 3.5S9.2 19 11 19s3.2-1.6 3.2-3.5M12 12l-1.5 9"/>
+      </svg>
+      CLOVER
+    </span>
+    <h1>부부 자산관리 앱 사용 가이드</h1>
+    <p class="sub">두 사람이 각자 휴대폰에서 같은 가계부를 함께 씁니다.
+      한쪽에서 고치면 상대 휴대폰에 새로고침 없이 바로 반영됩니다.
+      화면에서 <span class="chip hj">현조</span> 는 파랑, <span class="chip sy">신영</span> 은 초록으로 구분됩니다.</p>
+    <a class="url" href="https://hyunjolee-cell.github.io/clover/" target="_blank"
+       rel="noopener">hyunjolee-cell.github.io/clover</a>
+  </header>
+
+  <section>
+    <h2><span class="n">1</span>처음 한 번만 하는 설정</h2>
+    <p class="cap">이후에는 로그인 화면 없이 바로 들어갑니다.</p>
+    <div class="steps">
+      <div class="step">
+        <span class="who hj">현조님</span>
+        <div>
+          <b>계정 만들기 → 공유공간 생성</b>
+          <small>발급된 공유코드와 연결키를 보관해 주십시오. 설정에서 언제든 다시 볼 수 있습니다.</small>
+        </div>
+      </div>
+      <div class="step">
+        <span class="who sy">신영님</span>
+        <div>
+          <b>계정 만들기 → 사용자에서 신영 선택 → 공유코드·연결키 입력</b>
+          <small>QR 공유로 전달하셔도 됩니다.</small>
+        </div>
+      </div>
+      <div class="step">
+        <span class="who both">함께</span>
+        <div>
+          <b>기존 가계부 금액이 이미 채워져 있습니다</b>
+          <small>정기소득·고정비·공과금·적금·생활비 예산과 통장 흐름까지 들어 있습니다.</small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span>돈이 계산되는 방식</h2>
+    <p class="cap">개인 생활비와 공동 생활비를 다르게 다룹니다. 이 점만 알고 계시면 숫자가 이해됩니다.</p>
+    <div class="calc">
+      <div><span>정기소득 + 보너스</span><b>총수입</b></div>
+      <div><span>적금·저축</span><b class="minus">전액 차감</b></div>
+      <div><span>월 고정비</span><b class="minus">전액 차감</b></div>
+      <div><span>공과금</span><b class="minus">실제 금액, 없으면 예상금액</b></div>
+      <div><span>개인 생활비 (현조·신영)</span><b class="minus">예산 전액 차감</b></div>
+      <div><span>공동 생활비</span><b class="minus">실제 사용한 만큼만</b></div>
+      <div class="sum"><span>남는 금액</span><b>위를 모두 뺀 나머지</b></div>
+    </div>
+    <div class="info-box" style="margin-top:16px">
+      <b>개인 생활비는 사용처를 적지 않습니다.</b>
+      각자 알아서 쓰는 돈이라 예산을 정해 두면 그 금액이 이미 나간 것으로 봅니다.
+      월 고정비와 같은 취급입니다. 그래서 <b>공동 생활비만</b> 어디에 얼마 썼는지 적습니다.
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span>화면 다섯 개, 각각 언제 쓰는가</h2>
+    <div class="tabs">
+      <div class="tab">
+        <span class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5"/></svg></span>
+        <div><b>홈 — 이번 달 상황을 볼 때</b>
+          <small>남는 금액, 순자산, 저축률. 요약 카드와 돈의 흐름 각 줄을 누르면 바로 고치는 화면으로 갑니다.</small></div>
+      </div>
+      <div class="tab">
+        <span class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h16v14H4zM4 10.5h16M8.5 3.5v4M15.5 3.5v4"/></svg></span>
+        <div><b>달력 — 언제 얼마 썼는지 볼 때</b>
+          <small>날짜별 수입·지출·자동이체. 날짜를 누르면 그날 내역이 펼쳐집니다.</small></div>
+      </div>
+      <div class="tab">
+        <span class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3zM14.5 6.5l3 3"/></svg></span>
+        <div><b>입력 — 공동 생활비를 적을 때</b>
+          <small>맨 위 유형 칩(외식·장보기·경조사비 등)을 누르면 바로 만들어집니다. 보너스와 공과금 실제 금액도 여기서.</small></div>
+      </div>
+      <div class="tab">
+        <span class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h16v11H4zM4 8.5 6 4.5h12l2 4M16 14h2"/></svg></span>
+        <div><b>자산 — 통장 잔액을 갱신할 때</b>
+          <small>예금·주식·전세보증금·대출을 항목별로. 순자산이 자동 계산됩니다.</small></div>
+      </div>
+      <div class="tab">
+        <span class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+        <div><b>더보기 — 생활비 예산 세부, 포캐스팅, 자금 흐름, 항목 설정, 변경 로그, 기본값 관리</b>
+          <small>비밀번호 변경과 로그아웃도 여기 있습니다.</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span>이런 일이 생겼을 때</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>상황</th><th>하실 일</th><th>위치</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>함께 외식을 했다</td>
+            <td>유형 칩 <b>외식</b>을 누르고 금액만 입력</td>
+            <td><span class="path">입력</span></td>
+          </tr>
+          <tr>
+            <td>축의금을 냈다</td>
+            <td>유형 칩 <b>경조사비</b>를 누르고 금액 입력</td>
+            <td><span class="path">입력</span></td>
+          </tr>
+          <tr>
+            <td>내 용돈을 더 쓰고 싶다</td>
+            <td>개인 예산 금액 자체를 조정. 사용내역은 적지 않습니다</td>
+            <td><span class="path">더보기 → 생활비 예산 세부</span></td>
+          </tr>
+          <tr>
+            <td>둘이 얼마씩 쓰는지 비교하고 싶다</td>
+            <td><b>항목별 비교</b>를 누르면 용돈·점심·교통비를 나란히 보여줍니다</td>
+            <td><span class="path">더보기 → 생활비 예산 세부</span></td>
+          </tr>
+          <tr>
+            <td>월급이 올랐다</td>
+            <td>금액 수정. <b>적용 시작월</b>을 오른 달로 바꿔 주십시오</td>
+            <td><span class="path">홈 → 정기소득</span></td>
+          </tr>
+          <tr>
+            <td>공과금 고지서가 왔다</td>
+            <td>실제 금액 입력. 비우면 예상금액으로 계산됩니다</td>
+            <td><span class="path">입력 → 공과금</span></td>
+          </tr>
+          <tr>
+            <td>보너스를 받았다</td>
+            <td>지급일과 금액 추가</td>
+            <td><span class="path">입력 → 보너스</span></td>
+          </tr>
+          <tr>
+            <td>보험료가 바뀌었다</td>
+            <td>해당 항목 수정</td>
+            <td><span class="path">홈 → 월 고정비</span></td>
+          </tr>
+          <tr>
+            <td>통장 잔액을 확인했다</td>
+            <td>현재 금액과 기준일 갱신</td>
+            <td><span class="path">자산</span></td>
+          </tr>
+          <tr>
+            <td>이체일이 바뀌었다</td>
+            <td>자동이체 날짜·금액 수정. 흐름도가 함께 바뀝니다</td>
+            <td><span class="path">더보기 → 자금 흐름</span></td>
+          </tr>
+          <tr>
+            <td>2년 뒤가 궁금하다</td>
+            <td>시나리오에 기간·수익률 입력. 목표를 걸면 달성 시점까지 나옵니다</td>
+            <td><span class="path">더보기 → 포캐스팅</span></td>
+          </tr>
+          <tr>
+            <td>방금 잘못 고쳤다</td>
+            <td>상단 <b>되돌리기</b>를 누르면 직전 변경이 취소됩니다</td>
+            <td><span class="path">상단바</span></td>
+          </tr>
+          <tr>
+            <td>상대가 뭘 바꿨는지 궁금하다</td>
+            <td>작업자·시각·전후 값 확인</td>
+            <td><span class="path">더보기 → 변경 로그</span></td>
+          </tr>
+          <tr>
+            <td>비밀번호를 잊었다</td>
+            <td>재설정 링크를 메일로 받습니다</td>
+            <td><span class="path">로그인 화면</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span>기본값 관리</h2>
+    <p class="cap">자주 쓰는 구성을 기본값으로 저장해 두고 언제든 그 상태로 되돌릴 수 있습니다.</p>
+    <div class="tips">
+      <div class="tip">
+        <b>지금 설정을 기본값으로 저장</b>
+        <span>현재 항목들을 그대로 기본값으로 만듭니다.
+          처음에는 기존 가계부(25.10) 내용이 기본값으로 들어 있습니다.</span>
+      </div>
+      <div class="tip">
+        <b>기본값 불러오기</b>
+        <span>정기소득·고정비·공과금·적금·예산과 통장·카드·자동이체를 기본값 상태로 되돌립니다.
+          생활비 내역·보너스·자산·목표와 변경 로그는 그대로 남습니다.</span>
+      </div>
+      <div class="tip">
+        <b>원본으로 초기화</b>
+        <span>직접 저장하신 기본값을 지우고 처음 가계부 내용으로 되돌립니다.
+          현재 설정은 건드리지 않습니다.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span>알아두시면 좋은 것</h2>
+    <div class="tips">
+      <div class="tip">
+        <b>금액을 바꿀 때는 적용 시작월을 보십시오</b>
+        <span>8월부터 오른 월급이면 시작월을 8월로 하셔야 7월 이전 기록이 남습니다.
+          그대로 두면 이번 달 금액이 덮어써집니다.</span>
+      </div>
+      <div class="tip">
+        <b>항목은 눌러야 펼쳐집니다</b>
+        <span>설정 목록은 이름과 금액만 접혀 있습니다.
+          누르면 그 항목만 펼쳐지고 금액 칸에 커서가 바로 갑니다. 저장하면 다시 접힙니다.</span>
+      </div>
+      <div class="tip">
+        <b>모든 변경은 기록으로 남습니다</b>
+        <span>누가·언제·무엇을·얼마에서 얼마로 바꿨는지 전부 남으며 지울 수 없습니다.
+          되돌리기를 한 사실도 기록됩니다.</span>
+      </div>
+      <div class="tip">
+        <b>같은 항목을 동시에 고치면 알려 드립니다</b>
+        <span>조용히 덮어쓰지 않고 화면에 알린 뒤 최신 상태로 맞춥니다.</span>
+      </div>
+      <div class="tip">
+        <b>인터넷이 끊겨도 화면은 유지됩니다</b>
+        <span>다시 연결되면 밀린 내용을 자동으로 저장합니다.
+          다만 끊긴 상태에서 앱을 완전히 종료하시면 그때 미저장분은 사라집니다.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span>주의하실 점</h2>
+    <div class="tips">
+      <div class="callout">
+        <b>기본값 불러오기는 덮어씁니다.</b>
+        그동안 고쳐 두신 금액이 함께 사라지니 확인창의 건수를 보고 눌러 주십시오.
+        실수하셨다면 곧바로 <b>되돌리기</b>를 누르시면 됩니다.
+      </div>
+      <div class="danger-box">
+        <b>연결키는 비밀번호와 같습니다.</b>
+        이 값을 아는 사람은 공유공간에 들어올 수 있습니다.
+        QR 공유는 외부 서비스로 코드를 보내 이미지를 만드는 방식이니,
+        민감하다고 느끼시면 연결키 복사를 쓰시는 편이 안전합니다.
+      </div>
+    </div>
+  </section>
+
+  <footer>CLOVER · 현조 &amp; 신영 · 2026년 7월</footer>
+</div>
+
+</body>
+</html>
