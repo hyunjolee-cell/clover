@@ -3,7 +3,7 @@
  * 네트워크가 끊겼을 때만 마지막으로 받아둔 화면을 보여준다.
  * 버전을 올리면 기존 캐시는 전부 지워진다. */
 
-const CACHE = 'clover-v12';
+const CACHE = 'clover-v13';
 
 self.addEventListener('install', event => {
   self.skipWaiting();

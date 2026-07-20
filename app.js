@@ -851,6 +851,43 @@
 
   const emptyRow = text => `<p class="empty">${esc(text)}</p>`;
 
+  /* 라인 아이콘 — 디자인 규격상 이모지를 쓰지 않는다.
+     stroke 를 currentColor 로 두어 글자색을 따라간다. */
+  const ICON = {
+    home: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5',
+    calendar: 'M4 6.5h16v14H4zM4 10.5h16M8.5 3.5v4M15.5 3.5v4',
+    edit: 'M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3zM14.5 6.5l3 3',
+    wallet: 'M4 8.5h16v11H4zM4 8.5 6 4.5h12l2 4M16 14h2',
+    menu: 'M4 7h16M4 12h16M4 17h16',
+    back: 'M15 5l-7 7 7 7',
+    chevron: 'M9 5l7 7-7 7',
+    plus: 'M12 5v14M5 12h14',
+    chart: 'M4 20V9M10 20V4M16 20v-7M4 20h17',
+    flow: 'M6 5v6a3 3 0 0 0 3 3h9M18 10l3 4-3 4M6 5H4M6 5h2',
+    settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z' +
+              'M19.5 12a7.6 7.6 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7.5 7.5 0 0 0-2-1.2l-.3-2.5h-4l-.3 2.5' +
+              'a7.5 7.5 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7.6 7.6 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1' +
+              'a7.5 7.5 0 0 0 2 1.2l.3 2.5h4l.3-2.5a7.5 7.5 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2z',
+    history: 'M12 7v5l3.5 2M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4 4v4h4',
+    card: 'M3 7h18v11H3zM3 11h18',
+    bank: 'M4 10h16M5 10V19M19 10V19M9 10V19M15 10V19M3 19h18M12 3l8 5H4z',
+    piggy: 'M4 12a6 6 0 0 1 6-6h3a6 6 0 0 1 6 6v2a4 4 0 0 1-4 4h-1v2h-3v-2H9a5 5 0 0 1-5-5z' +
+           'M8.5 11h.01M3 12H2',
+    inbox: 'M4 13h4l1.5 3h5L16 13h4M4 13 6.5 5h11L20 13v6H4z',
+    clover: 'M12 12c0-2.5-1.5-4.5-3.5-4.5S5 9.2 5 11s1.6 3.2 3.5 3.2' +
+            'M12 12c2.5 0 4.5-1.5 4.5-3.5S14.8 5 13 5s-3.2 1.6-3.2 3.5' +
+            'M12 12c0 2.5 1.5 4.5 3.5 4.5S19 14.8 19 13s-1.6-3.2-3.5-3.2' +
+            'M12 12c-2.5 0-4.5 1.5-4.5 3.5S9.2 19 11 19s3.2-1.6 3.2-3.5' +
+            'M12 12l-1.5 9',
+    key: 'M14.5 4a5.5 5.5 0 1 0-4.2 9.3L4 19.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 0 14.5 4z' +
+         'M16 8h.01'
+  };
+
+  const icon = (name, size = 22) =>
+    `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true"><path d="${ICON[name] || ICON.chevron}"/></svg>`;
+
   /* --- 9. 화면: 로그인 ---------------------------------------------------- */
 
   function authView() {
@@ -864,7 +901,7 @@
     return `
       <main class="center">
         <section class="center-card">
-          <div class="logo">🍀</div>
+          <div class="logo">${icon("clover", 34)}</div>
           <h1>CLOVER</h1>
           <p class="lead">부부가 함께 쓰는 자산관리 앱입니다.<br>${lead}</p>
           ${app.lastError ? `<p class="alert">${esc(app.lastError)}</p>` : ''}
@@ -904,7 +941,7 @@
     return `
       <main class="center">
         <section class="center-card">
-          <div class="logo">🔑</div>
+          <div class="logo">${icon("key", 34)}</div>
           <h1>새 비밀번호 설정</h1>
           <p class="lead">앞으로 사용할 비밀번호를 입력해주세요.</p>
           ${app.lastError ? `<p class="alert">${esc(app.lastError)}</p>` : ''}
@@ -931,7 +968,7 @@
     return `
       <main class="center">
         <section class="center-card wide">
-          <div class="logo">🏠</div>
+          <div class="logo">${icon("home", 34)}</div>
           <h1>공유공간 연결</h1>
           <p class="lead">첫 번째 휴대폰에서 공유공간을 만들고,<br>
             두 번째 휴대폰에서 발급된 연결코드를 한 번만 입력합니다.</p>
@@ -1199,7 +1236,7 @@
               ${x.memo ? `<small>${esc(x.memo)}</small>` : ''}
             </span>
             <span class="brief-amount">${won(value)}</span>
-            <span class="brief-arrow">›</span>
+            <span class="brief-arrow">${icon("chevron", 18)}</span>
           </button>`;
       }
 
@@ -1677,10 +1714,10 @@
   /* --- 15-B. 화면: 자금 흐름도 -------------------------------------------- */
 
   const ACCOUNT_KIND = {
-    salary: { label: '월급 통장', icon: '💰' },
-    spending: { label: '생활비 통장', icon: '🏦' },
-    shared: { label: '공용 통장', icon: '🏠' },
-    saving: { label: '저축 통장', icon: '🐖' }
+    salary: { label: '월급 통장', icon: 'bank' },
+    spending: { label: '생활비 통장', icon: 'wallet' },
+    shared: { label: '공용 통장', icon: 'home' },
+    saving: { label: '저축 통장', icon: 'piggy' }
   };
 
   function flowDiagram() {
@@ -1702,7 +1739,7 @@
       return `
         <div class="flow-box ${acc.kind}">
           <div class="flow-box-head">
-            <span class="flow-icon">${meta.icon}</span>
+            <span class="flow-icon">${icon(meta.icon, 20)}</span>
             <div>
               <b>${esc(acc.name)}</b>
               <small>${meta.label} · ${esc(acc.owner)}</small>
@@ -1710,7 +1747,7 @@
             ${total ? `<span class="flow-total">${won(total)}</span>` : ''}
           </div>
           ${cards.length ? `<div class="flow-cards">${cards.map(c =>
-            `<span class="chip">💳 ${esc(c.name)}</span>`).join('')}</div>` : ''}
+            `<span class="chip">${icon("card", 14)}${esc(c.name)}</span>`).join('')}</div>` : ''}
           ${acc.memo ? `<small class="flow-memo">${esc(acc.memo)}</small>` : ''}
         </div>`;
     };
@@ -1743,7 +1780,7 @@
               : target ? box(target, 0)
               : `<div class="flow-box leaf">
                    <div class="flow-box-head">
-                     <span class="flow-icon">📥</span>
+                     <span class="flow-icon">${icon("inbox", 20)}</span>
                      <div><b>${esc(f.name)}</b><small>바로 납입</small></div>
                    </div>
                  </div>`}
@@ -1886,10 +1923,10 @@
 
   function moreView() {
     const items = [
-      ['forecast', '📈', '자산 포캐스팅', '시나리오별 예상 순자산과 목표 달성 시점'],
-      ['flow', '🔀', '자금 흐름', '통장·카드·자동이체를 흐름도로 확인'],
-      ['settings', '⚙️', '항목 설정', '정기소득·고정비·공과금·적금·예산 관리'],
-      ['logs', '📝', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록']
+      ['forecast', 'chart', '자산 포캐스팅', '시나리오별 예상 순자산과 목표 달성 시점'],
+      ['flow', 'flow', '자금 흐름', '통장·카드·자동이체를 흐름도로 확인'],
+      ['settings', 'settings', '항목 설정', '정기소득·고정비·공과금·적금·예산 관리'],
+      ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록']
     ];
     return `
       <section class="page">
@@ -1898,11 +1935,11 @@
         </div>
 
         <div class="menu-list">
-          ${items.map(([tab, icon, title, desc]) => `
+          ${items.map(([tab, ic, title, desc]) => `
             <button type="button" class="menu-item" data-tab="${tab}">
-              <span class="menu-icon">${icon}</span>
+              <span class="menu-icon">${icon(ic)}</span>
               <span class="menu-text"><b>${title}</b><small>${desc}</small></span>
-              <span class="menu-arrow">›</span>
+              <span class="menu-arrow">${icon("chevron", 18)}</span>
             </button>`).join('')}
         </div>
 
@@ -2031,8 +2068,8 @@
   function appShell() {
     // 하단은 자주 쓰는 5개만 둔다. 나머지는 더보기에서 들어간다.
     const tabs = [
-      ['home', '🏠', '홈'], ['calendar', '📅', '달력'], ['monthly', '✏️', '입력'],
-      ['assets', '💎', '자산'], ['more', '☰', '더보기']
+      ['home', 'home', '홈'], ['calendar', 'calendar', '달력'], ['monthly', 'edit', '입력'],
+      ['assets', 'wallet', '자산'], ['more', 'menu', '더보기']
     ];
     const views = {
       home: homeView, calendar: calendarView, monthly: monthlyView, assets: assetsView,
@@ -2050,8 +2087,8 @@
       <div class="app">
         <header class="topbar">
           <div class="brand">
-            ${sub ? `<button class="back" type="button" data-tab="more" aria-label="뒤로">‹</button>`
-                  : `<span class="mark">🍀</span>`}
+            ${sub ? `<button class="back" type="button" data-tab="more" aria-label="뒤로">${icon("back", 22)}</button>`
+                  : `<span class="mark">${icon("clover", 24)}</span>`}
             <div><b>${sub ? esc(subTitle) : 'CLOVER'}</b>
               <small>${esc(app.space.name || '우리집')}</small></div>
           </div>
@@ -2068,15 +2105,15 @@
         ${content}
 
         ${['home', 'calendar', 'monthly'].includes(app.tab)
-          ? `<button class="fab" type="button" data-quick-add aria-label="지출 빠른 입력">＋</button>`
+          ? `<button class="fab" type="button" data-quick-add aria-label="지출 빠른 입력">${icon("plus", 24)}</button>`
           : ''}
 
         <nav class="bottom-nav">
-          ${tabs.map(([k, icon, t]) => {
+          ${tabs.map(([k, icon_, t]) => {
             const on = app.tab === k ||
               (k === 'more' && ['forecast', 'flow', 'settings', 'logs'].includes(app.tab));
             return `<button type="button" data-tab="${k}" class="${on ? 'active' : ''}">
-              <span class="nav-icon">${icon}</span><span>${t}</span></button>`;
+              <span class="nav-icon">${icon(icon_)}</span><span>${t}</span></button>`;
           }).join('')}
         </nav>
         <div id="toast" class="toast" role="status"></div>
@@ -2090,7 +2127,7 @@
 
     if (app.screen === 'boot') {
       root.innerHTML = `<main class="center"><section class="center-card">
-        <div class="logo">🍀</div><h1>CLOVER</h1><p class="lead">불러오는 중입니다…</p>
+        <div class="logo">${icon("clover", 34)}</div><h1>CLOVER</h1><p class="lead">불러오는 중입니다…</p>
         </section></main>`;
     } else if (app.screen === 'auth') {
       root.innerHTML = authView();

@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CLOVER">
-  <rect width="512" height="512" rx="112" fill="#2f8f5b"/>
+  <rect width="512" height="512" rx="112" fill="#3B6FE0"/>
   <g fill="#ffffff">
     <circle cx="256" cy="176" r="62"/>
     <circle cx="336" cy="256" r="62"/>
     <circle cx="256" cy="336" r="62"/>
     <circle cx="176" cy="256" r="62"/>
-    <circle cx="256" cy="256" r="30" fill="#2f8f5b"/>
+    <circle cx="256" cy="256" r="30" fill="#3B6FE0"/>
   </g>
 </svg>
