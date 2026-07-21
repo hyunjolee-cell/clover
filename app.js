@@ -3079,6 +3079,11 @@
     if (!target) return;
     const name = String(d.get('name') ?? target.name ?? '').trim() || '이름 없음';
 
+    // 적용 시작월이 지금 보는 달보다 미래면, 그달로 가야 보인다는 안내를 준비한다
+    const savedFrom = String(d.get('from') || app.month).slice(0, 7);
+    const futureFrom = ['income', 'fixed', 'saving', 'budget', 'utility'].includes(kind)
+      && savedFrom > app.month;
+
     await mutate(
       state => {
         const x = findEntity(kind, id, state);
@@ -3179,7 +3184,9 @@
         action: 'update', type: kind, id,
         summary: `${ENTITY_LABEL[kind]} "${name}" 수정`,
         pick: s => findEntity(kind, id, s),
-        success: '수정했습니다.'
+        success: futureFrom
+          ? `${monthLabel(savedFrom)}부터 적용됩니다`
+          : '수정했습니다.'
       }
     );
     // 저장하면 다시 접어 목록을 짧게 유지한다
