@@ -829,7 +829,15 @@
       }
 
       setSync('동기화 완료', 'ok');
-      toast(meta.success || '저장했습니다.');
+      // 공동 생활비를 적으면 이번 달 남은 예산을 함께 알려 준다
+      if (meta.type === 'transaction' && meta.action !== 'delete') {
+        const left = sharedBudget(app.month) - sharedSpend(app.month);
+        toast(left >= 0
+          ? `기록했습니다 · 이번 달 ${won(left)} 남음`
+          : `기록했습니다 · 예산 ${won(-left)} 초과`);
+      } else {
+        toast(meta.success || '저장했습니다.');
+      }
       if (app.tab === 'logs') await loadLogs().catch(() => {});
       return true;
 
@@ -1218,6 +1226,7 @@
   function homeView() {
     const s = summary();
     const sharedUsed = s.spend;
+    const sharedLeft = s.sharedBudget - sharedUsed;
     const sharedRate = s.sharedBudget > 0 ? Math.round((sharedUsed / s.sharedBudget) * 100) : 0;
     const over = s.sharedBudget > 0 && sharedUsed > s.sharedBudget;
 
@@ -1228,6 +1237,20 @@
           ${monthNav()}
         </div>
 
+        <!-- 매일 여는 앱: 지금 얼마 쓸 수 있는지를 가장 크게 -->
+        <article class="today-card ${over ? 'over' : ''}">
+          <div class="today-top">
+            <span>이번 달 공동생활비 ${over ? '초과' : '남음'}</span>
+            <span class="today-budget">예산 ${won(s.sharedBudget)}</span>
+          </div>
+          <strong class="${over ? 'minus' : ''}">${won(Math.abs(sharedLeft))}</strong>
+          <div class="today-bar"><i style="width:${Math.min(100, sharedRate)}%"></i></div>
+          <div class="today-foot">
+            <small>${won(sharedUsed)} 썼습니다 · 예산의 ${sharedRate}%</small>
+            <button class="today-add" type="button" data-quick-add>＋ 지출 기록</button>
+          </div>
+        </article>
+
         <div class="hero">
           <div class="hero-item">
             <small>이번 달 남는 금액</small>
@@ -1237,7 +1260,7 @@
           <button class="hero-item" type="button" data-goto="assets">
             <small>현재 순자산</small>
             <strong>${won(netAssets())}</strong>
-            <small>자산 ${won(assetTotal())} − 부채 ${won(debtTotal())}</small>
+            <small>자산·적금 합 − 부채</small>
           </button>
         </div>
 
@@ -2619,14 +2642,19 @@
   /* --- 15-D. 화면: 더보기 -------------------------------------------------- */
 
   function moreView() {
-    const items = [
-      ['budgets', 'wallet', '생활비 예산 세부', '현조·신영·공동 예산을 따로 또는 함께 비교'],
-      ['forecast', 'chart', '자산 포캐스팅', '시나리오별 예상 순자산과 목표 달성 시점'],
-      ['flow', 'flow', '자금 흐름', '통장·카드·자동이체를 흐름도로 확인'],
-      ['settings', 'settings', '항목 설정', '정기소득·고정비·공과금·적금·예산 관리'],
-      ['defaults', 'history', '기본값 관리', '기본값을 확인하고 원하는 대로 바꾸기'],
-      ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨는지 전부 기록'],
-      ['guide', 'book', '사용 설명서', '어떤 기능을 언제 쓰는지 한 장으로 정리']
+    // 자주 쓰는 설정 / 분석·도구 / 계정 세 묶음으로 얕게 나눈다
+    const groups = [
+      ['자주 쓰는 설정', [
+        ['settings', 'settings', '항목 설정', '소득·고정비·공과금·적금·예산'],
+        ['budgets', 'wallet', '생활비 예산 세부', '현조·신영·공동 예산 비교'],
+        ['flow', 'flow', '자금 흐름', '통장·카드·자동이체 흐름도']
+      ]],
+      ['분석·도구', [
+        ['forecast', 'chart', '자산 포캐스팅', '시나리오별 예상 순자산'],
+        ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨나'],
+        ['defaults', 'book', '기본값 관리', '기본값 저장·불러오기'],
+        ['guide', 'book', '사용 설명서', '기능을 언제 쓰는지 한 장']
+      ]]
     ];
     return `
       <section class="page">
@@ -2634,14 +2662,17 @@
           <div><span class="eyebrow">더보기</span><h2>${esc(app.space.name || '우리집')}</h2></div>
         </div>
 
-        <div class="menu-list">
-          ${items.map(([tab, ic, title, desc]) => `
-            <button type="button" class="menu-item" data-tab="${tab}">
-              <span class="menu-icon">${icon(ic)}</span>
-              <span class="menu-text"><b>${title}</b><small>${desc}</small></span>
-              <span class="menu-arrow">${icon("chevron", 18)}</span>
-            </button>`).join('')}
-        </div>
+        ${groups.map(([title, items]) => `
+          <div class="menu-group-label">${title}</div>
+          <div class="menu-list">
+            ${items.map(([tab, ic, name, desc]) => `
+              <button type="button" class="menu-item" data-tab="${tab}">
+                <span class="menu-icon">${icon(ic)}</span>
+                <span class="menu-text"><b>${name}</b><small>${desc}</small></span>
+                <span class="menu-arrow">${icon("chevron", 18)}</span>
+              </button>`).join('')}
+          </div>`).join('')}
+        <div class="menu-group-label">계정</div>
 
         <article class="card">
           <div class="card-head"><h3>이 휴대폰</h3></div>

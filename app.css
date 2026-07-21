@@ -1187,3 +1187,51 @@ button.hero-item:active { transform: none; }
   width: 10px; height: 10px; border-radius: 3px;
   background: var(--success); display: inline-block; flex-shrink: 0;
 }
+
+/* 오늘 카드 — 매일 여는 앱의 첫 화면. 지금 얼마 쓸 수 있는지를 가장 크게 */
+.today-card {
+  background: linear-gradient(135deg, #3B6FE0, #2F58B8);
+  color: #fff; border-radius: var(--r-card);
+  padding: 20px; display: grid; gap: 12px;
+  box-shadow: 0 4px 16px rgba(59, 111, 224, .22);
+}
+.today-card.over { background: linear-gradient(135deg, #D26464, #B84A4A); }
+.today-top {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  font-size: 13px;
+}
+.today-top span:first-child { font-weight: 600; }
+.today-budget { color: rgba(255,255,255,.8); font-variant-numeric: tabular-nums; }
+.today-card strong {
+  font-size: 34px; font-weight: 800; letter-spacing: -.04em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.today-card strong.minus { color: #fff; }
+.today-bar {
+  height: 6px; border-radius: 999px;
+  background: rgba(255,255,255,.25); overflow: hidden;
+}
+.today-bar i { display: block; height: 100%; background: #fff; border-radius: 999px; }
+.today-foot {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.today-foot small { color: rgba(255,255,255,.85); font-variant-numeric: tabular-nums; }
+.today-add {
+  min-height: 40px; padding: 0 16px;
+  background: rgba(255,255,255,.95); color: var(--blue-deep);
+  border: none; border-radius: 999px; font-size: 13.5px; font-weight: 700;
+  flex-shrink: 0;
+}
+.today-add:hover { background: #fff; }
+.today-card.over .today-add { color: var(--red-t); }
+
+@media (max-width: 699px) {
+  .today-card strong { font-size: 30px; }
+  .today-foot { flex-wrap: wrap; }
+}
+
+.menu-group-label {
+  font-size: 12.5px; font-weight: 700; color: var(--g500);
+  padding: 6px 4px 2px;
+}
+.menu-list + .menu-group-label { margin-top: 8px; }
