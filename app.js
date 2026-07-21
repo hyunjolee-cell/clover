@@ -502,6 +502,7 @@
     budgetView: 'all',     // 예산 세부 화면에서 보고 있는 대상
     openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
     passwordReturn: '',    // 비밀번호 변경 후 돌아갈 화면
+    pendingToast: '',      // render 후 표시할 토스트
     sync: '준비 중',
     syncTone: 'idle',      // idle | ok | busy | warn | error
     logs: [],
@@ -1032,12 +1033,20 @@
   }
 
   function toast(message) {
+    // render()가 셸을 다시 그리면 토스트 요소가 재생성돼 텍스트가 지워진다.
+    // 메시지를 담아 두고 다음 프레임에 표시해 그 문제를 피한다.
+    app.pendingToast = message;
+    requestAnimationFrame(showToast);
+  }
+  function showToast() {
+    if (!app.pendingToast) return;
     const n = document.querySelector('#toast');
     if (!n) return;
-    n.textContent = message;
+    n.textContent = app.pendingToast;
+    app.pendingToast = '';
     n.classList.add('show');
-    clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => n.classList.remove('show'), 2600);
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => n.classList.remove('show'), 2600);
   }
 
   const ownerSelect = (name, value) =>
@@ -2941,6 +2950,8 @@
     } else {
       root.innerHTML = appShell();
     }
+    // 셸을 다시 그린 뒤 대기 중인 토스트가 있으면 이어서 표시한다
+    if (app.pendingToast) showToast();
   }
 
   /* --- 18. 변경 동작 ------------------------------------------------------ */
