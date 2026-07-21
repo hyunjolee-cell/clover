@@ -1257,7 +1257,7 @@
         const bal = savingBalance(sv);
         const monthly = historyValue(sv.history, app.month);
         return `
-          <button type="button" class="sv-row" data-open-saving="${sv.id}">
+          <button type="button" class="sv-row" data-open-saving="${sv.id}" data-longedit="saving:${sv.id}">
             <span class="sv-name">${esc(sv.name)}${ownerTag(sv.owner)}</span>
             <span class="sv-amt">${won(bal)}<small>매달 +${shortWon(monthly)}</small></span>
           </button>`;
@@ -1664,7 +1664,7 @@
       if (!open) {
         const bal = kind === 'saving' ? savingBalance(x) : null;
         return `
-          <button type="button" class="row-brief" data-open-row="${kind}:${x.id}">
+          <button type="button" class="row-brief" data-open-row="${kind}:${x.id}" data-longedit="${kind}:${x.id}">
             <span class="brief-main">
               <b>${esc(x.name)}</b>
               ${opts.owner ? ownerTag(x.owner) : ''}
@@ -1751,7 +1751,7 @@
 
       if (!open) {
         return `
-          <button type="button" class="row-brief" data-open-row="asset:${x.id}">
+          <button type="button" class="row-brief" data-open-row="asset:${x.id}" data-longedit="asset:${x.id}">
             <span class="brief-main">
               <b>${esc(x.name)}</b>
               <span class="tag ${x.kind === 'debt' ? 'tag-delete' : ''}">${
@@ -1960,7 +1960,7 @@
               const bal = savingBalance(sv);
               const monthly = historyValue(sv.history, app.month);
               return `
-                <button type="button" class="row-brief" data-open-saving="${sv.id}">
+                <button type="button" class="row-brief" data-open-saving="${sv.id}" data-longedit="saving:${sv.id}">
                   <span class="brief-main">
                     <b>${esc(sv.name)}</b>
                     ${ownerTag(sv.owner)}
@@ -2374,7 +2374,7 @@
               // 생활비·보너스는 눌러서 바로 고칠 수 있게 한다 (자동이체는 흐름도에서 관리)
               const editable = e.type === 'spend' || e.type === 'income';
               const attr = editable
-                ? `class="day-item ${e.type} tap" type="button" data-edit-tx="${e.type}:${e.id}"`
+                ? `class="day-item ${e.type} tap" type="button" data-edit-tx="${e.type}:${e.id}" data-longedit="${e.type==='income'?'bonus':'transaction'}:${e.id}"`
                 : `class="day-item ${e.type}"`;
               const tag = editable ? 'button' : 'div';
               return `
@@ -4096,6 +4096,58 @@
       try { history.pushState({ clover: true }, ''); } catch {}
     }
   });
+
+  /* 항목을 편집 화면으로 데려가 금액 칸에 커서를 둔다. */
+  function runLongEdit(v) {
+    const [kind, id] = v.split(':');
+    if (['income', 'fixed', 'utility', 'saving', 'budget'].includes(kind)) {
+      app.tab = 'settings'; app.settingsGroup = kind; app.openRow = `${kind}:${id}`;
+    } else if (kind === 'asset') {
+      app.tab = 'assets'; app.openRow = `asset:${id}`;
+    } else if (kind === 'transaction' || kind === 'bonus') {
+      app.tab = 'monthly';
+    }
+    render();
+    const form = document.querySelector(`form[data-row="${kind}"][data-id="${id}"]`);
+    if (form) {
+      form.classList.add('just-added');
+      form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const amt = form.querySelector('input[name="amount"]');
+      amt?.focus(); amt?.select();
+    }
+  }
+
+  /* 길게 누르기(1초) — 짧은 탭은 보기·이동, 길게 누르면 바로 편집.
+     실수로 값이 바뀌지 않게 편집은 의도적 롱프레스로만 연다. */
+  (function longPress() {
+    let timer = null, target = null, sx = 0, sy = 0, fired = false;
+    const cancel = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (target) { target.classList.remove('lp-on'); target = null; }
+    };
+    document.addEventListener('pointerdown', e => {
+      const el = e.target.closest('[data-longedit]');
+      if (!el) return;
+      target = el; sx = e.clientX; sy = e.clientY; fired = false;
+      el.classList.add('lp-on');
+      timer = setTimeout(() => {
+        fired = true;
+        el.classList.remove('lp-on');
+        if (navigator.vibrate) { try { navigator.vibrate(25); } catch {} }
+        runLongEdit(el.dataset.longedit);
+        target = null; timer = null;
+      }, 1000);
+    });
+    document.addEventListener('pointermove', e => {
+      if (target && (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8)) cancel();
+    });
+    document.addEventListener('pointerup', cancel);
+    document.addEventListener('pointercancel', cancel);
+    // 롱프레스가 발동했으면 뒤이어 오는 짧은 탭(click)은 취소한다
+    document.addEventListener('click', e => {
+      if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; }
+    }, true);
+  })();
 
   async function boot() {
     app.device = loadDevice();
