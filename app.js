@@ -1339,7 +1339,7 @@
       ['지출', 'expense', 'c-out'],
       ['적금', 'saving', 'c-save']
     ];
-    const H = big ? 96 : 72;      // 이전보다 약 30% 낮춘 막대 높이
+    const H = big ? 88 : 64;      // 이전보다 약 30% 낮춘 막대 높이
 
     const cols = data.map(d => {
       const isNow = d.m === app.month;
@@ -1355,7 +1355,7 @@
           ${big ? '' : `<div class="ch-labels">
             ${d.future ? '<span class="ch-none">기록 없음</span>'
               : series.map(([label, key, cls]) =>
-                `<span class="${cls}"><i></i>${label} <b>${manLabel(d[key]) || '0'}만</b></span>`).join('')}
+                `<span class="${cls}"><i></i>${label} <b>${manLabel(d[key]) || '0만'}</b></span>`).join('')}
           </div>`}
         </div>`;
     }).join('');
