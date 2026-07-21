@@ -1095,9 +1095,8 @@ button.hero-item:active { transform: none; }
   .cmp-bars { grid-template-columns: 1fr 1fr; gap: 6px; }
   .cmp-val { font-size: 12px; }
 
-  /* 추이 그래프 */
-  .trend { height: 128px; }
-  .trend-val { font-size: 8.5px; }
+  /* 추이 그래프 (막대 영역은 .trend-bars 고정 높이가 담당) */
+  .trend-bars { height: 64px; }
   .trend-label { font-size: 9.5px; }
 
   /* 제목 크기 */
