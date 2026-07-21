@@ -1960,7 +1960,7 @@
               const bal = savingBalance(sv);
               const monthly = historyValue(sv.history, app.month);
               return `
-                <button type="button" class="row-brief" data-goto="settings:saving">
+                <button type="button" class="row-brief" data-open-saving="${sv.id}">
                   <span class="brief-main">
                     <b>${esc(sv.name)}</b>
                     ${ownerTag(sv.owner)}
