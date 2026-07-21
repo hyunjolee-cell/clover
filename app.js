@@ -501,6 +501,7 @@
     settingsGroup: 'income', // 설정에서 보고 있는 항목 종류
     budgetView: 'all',     // 예산 세부 화면에서 보고 있는 대상
     openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
+    homeOpen: null,        // 홈에서 펼친 섹션 (flow / sv:flex / sv:long)
     passwordReturn: '',    // 비밀번호 변경 후 돌아갈 화면
     pendingToast: '',      // render 후 표시할 토스트
     sync: '준비 중',
@@ -1259,6 +1260,19 @@
           </button>`;
       }).join('') : `<p class="empty">항목이 없습니다.</p>`;
 
+    // 평소엔 두 그룹 합계만, 누른 그룹만 항목이 열린다 (홈은 하나만 펼침)
+    const col = (id, title, desc, list, total) => {
+      const open = app.homeOpen === `sv:${id}`;
+      return `
+        <div class="sv-col ${id} ${open ? 'open' : ''}">
+          <button type="button" class="sv-col-head" data-home-open="sv:${id}">
+            <span class="sv-col-title">${title}<i>${list.length}개</i></span>
+            <b>${won(total)} ${icon(open ? 'chevron' : 'chevron', 15)}</b>
+          </button>
+          ${open ? `<p class="note">${desc}</p>${rows(list)}` : ''}
+        </div>`;
+    };
+
     return `
       <article class="card sv-panel">
         <div class="card-head">
@@ -1271,24 +1285,11 @@
         </div>
 
         <div class="sv-split">
-          <div class="sv-col flex">
-            <div class="sv-col-head">
-              <span>언제든 쓸 수 있는 돈</span>
-              <b>${won(flexTotal)}</b>
-            </div>
-            <p class="note">경조사·여행·옷처럼 필요할 때 꺼내 씁니다</p>
-            ${rows(flex)}
-          </div>
-          <div class="sv-col long">
-            <div class="sv-col-head">
-              <span>목적까지 모으는 돈</span>
-              <b>${won(longTotal)}</b>
-            </div>
-            <p class="note">집·청약처럼 목표를 위해 장기 보관합니다</p>
-            ${rows(longt)}
-          </div>
+          ${col('flex', '언제든 쓸 수 있는 돈', '경조사·여행·옷처럼 필요할 때 꺼내 씁니다',
+            flex, flexTotal)}
+          ${col('long', '목적까지 모으는 돈', '집·청약처럼 목표를 위해 장기 보관합니다',
+            longt, longTotal)}
         </div>
-        <p class="note">항목을 누르면 잔액을 고치거나 꺼내 쓸 수 있습니다.</p>
       </article>`;
   }
 
@@ -1306,7 +1307,7 @@
           ${monthNav()}
         </div>
 
-        <!-- 매일 여는 앱: 지금 얼마 쓸 수 있는지를 가장 크게 -->
+        <!-- 오늘 카드: 남은 공동생활비 + 예산 막대 + 개인 생활비까지 흡수 -->
         <article class="today-card ${over ? 'over' : ''}">
           <div class="today-top">
             <span>이번 달 공동생활비 ${over ? '초과' : '남음'}</span>
@@ -1317,6 +1318,12 @@
           <div class="today-foot">
             <small>${won(sharedUsed)} 썼습니다 · 예산의 ${sharedRate}%</small>
             <button class="today-add" type="button" data-quick-add>＋ 지출 기록</button>
+          </div>
+          <div class="today-people">
+            <button type="button" data-goto="budgets:현조">
+              <span>현조 생활비</span><b>${won(budgetByOwner(app.month, '현조'))}</b></button>
+            <button type="button" data-goto="budgets:신영">
+              <span>신영 생활비</span><b>${won(budgetByOwner(app.month, '신영'))}</b></button>
           </div>
         </article>
 
@@ -1345,79 +1352,68 @@
             <small>고정비·공과금·생활비</small></button>
         </div>
 
-        <div class="grid two">
-          <article class="card">
-            <div class="card-head"><h3>이번 달 돈의 흐름</h3></div>
-            <div class="flow grouped">
-              <div class="flow-group">들어온 돈</div>
-              <button type="button" data-goto="settings:income">
-                <span>정기소득</span><b>${won(s.base)}</b></button>
-              <button type="button" data-goto="monthly">
-                <span>보너스·상여금 <i class="hint-tag">입력분</i></span>
-                <b>${won(s.bonus)}</b></button>
-              <div class="sum"><span>총수입</span><b>${won(s.income)}</b></div>
-
-              <div class="flow-group keep">옮긴 돈 · 없어지지 않고 쌓입니다</div>
-              <button type="button" data-goto="settings:saving">
-                <span>적금·저축</span>
-                <b class="keep">−${won(s.saving)}</b></button>
-              <div class="flow-side">
-                모아 둔 적금 <b>${won(savingBalanceTotal())}</b></div>
-
-              <div class="flow-group">쓴 돈</div>
-              <button type="button" data-goto="settings:fixed">
-                <span>월 고정비 <i class="hint-tag auto">자동</i></span>
-                <b class="minus">−${won(s.fixed)}</b></button>
-              <button type="button" data-goto="settings:utility">
-                <span>공과금 <i class="hint-tag auto">자동</i></span>
-                <b class="minus">−${won(s.utility)}</b></button>
-              <button type="button" data-goto="budgets">
-                <span>개인 생활비 <i class="hint-tag auto">자동</i></span>
-                <b class="minus">−${won(s.personal)}</b></button>
-              <button type="button" data-goto="monthly">
-                <span>공동 생활비 <i class="hint-tag">입력분</i></span>
-                <b class="minus">−${won(s.spend)}</b></button>
-              <div class="sum"><span>총지출</span><b class="minus">−${won(s.expense)}</b></div>
-
-              <div class="sum final"><span>남는 금액</span>
-                <b class="${s.remaining < 0 ? 'minus' : 'plus'}">${won(s.remaining)}</b></div>
-            </div>
-            <div class="flow-legend">
-              <span><i class="hint-tag auto">자동</i>내역을 적지 않아도 그 달에 나간 것으로 봅니다</span>
-              <span><i class="hint-tag">입력분</i>적은 만큼만 반영됩니다</span>
-              <span><i class="keep-dot"></i>적금은 나가지만 자산으로 쌓입니다</span>
-            </div>
-          </article>
-
-          ${savingsPanel()}
-
-          <article class="card">
-            <div class="card-head">
-              <h3>공동 생활비</h3>
-              <button class="secondary" type="button" data-goto="budgets">예산 세부내역</button>
-            </div>
-            <div class="budget-list">
-              <button type="button" class="budget-row ${over ? 'over' : ''}" data-goto="monthly">
-                <div class="budget-top"><span class="own-both-text">외식·생필품 등</span>
-                  <b>${won(sharedUsed)}${s.sharedBudget > 0 ? ` / ${won(s.sharedBudget)}` : ''}
-                    ${icon('chevron', 15)}</b></div>
-                <div class="bar"><i style="width:${Math.min(100, sharedRate)}%"></i></div>
-                <small>${s.sharedBudget > 0
-                  ? `예산의 ${sharedRate}% 사용${over ? ' · 예산 초과' : ''}`
-                  : '예산 미설정 — 설정에서 추가'}</small>
-              </button>
-            </div>
-            <div class="totals linked" style="margin-top:16px">
-              <button type="button" data-goto="budgets:현조">
-                <span class="own-hj-text">현조 생활비</span>
-                <b>${won(budgetByOwner(app.month, '현조'))}${icon('chevron', 15)}</b></button>
-              <button type="button" data-goto="budgets:신영">
-                <span class="own-sy-text">신영 생활비</span>
-                <b>${won(budgetByOwner(app.month, '신영'))}${icon('chevron', 15)}</b></button>
-            </div>
-          </article>
-        </div>
+        ${flowCard(s)}
+        ${savingsPanel()}
       </section>`;
+  }
+
+  /* 돈의 흐름 — 평소엔 4단계 요약, 누른 단계만 상세가 열린다.
+     홈에서는 흐름과 모으는돈 중 하나만 펼쳐 두어(app.homeOpen) 스크롤을 줄인다. */
+  function flowCard(s) {
+    const open = app.homeOpen === 'flow';
+    const stages = [
+      { key: 'in', label: '들어온 돈', amount: s.income, cls: 'plus',
+        detail: [
+          ['정기소득', s.base, '', 'settings:income'],
+          ['보너스·상여금', s.bonus, '입력분', 'monthly']
+        ] },
+      { key: 'keep', label: '옮긴 돈 · 쌓입니다', amount: -s.saving, cls: 'keep',
+        note: `모아 둔 적금 ${won(savingBalanceTotal())}`,
+        detail: [['적금·저축', -s.saving, '', 'settings:saving']] },
+      { key: 'out', label: '쓴 돈', amount: -s.expense, cls: 'minus',
+        detail: [
+          ['월 고정비', -s.fixed, '자동', 'settings:fixed'],
+          ['공과금', -s.utility, '자동', 'settings:utility'],
+          ['개인 생활비', -s.personal, '자동', 'budgets'],
+          ['공동 생활비', -s.spend, '입력분', 'monthly']
+        ] }
+    ];
+
+    return `
+      <article class="card flow-card">
+        <button type="button" class="card-head flow-toggle" data-home-open="flow">
+          <h3>이번 달 돈의 흐름</h3>
+          <span class="fold-hint">${open ? '접기' : '자세히'}
+            ${icon(open ? 'chevron' : 'chevron', 16)}</span>
+        </button>
+
+        <div class="flow-stages">
+          ${stages.map(st => `
+            <div class="stage ${open ? 'open' : ''}">
+              <div class="stage-head">
+                <span>${st.label}</span>
+                <b class="${st.cls}">${st.amount < 0 ? '−' : ''}${won(Math.abs(st.amount))}</b>
+              </div>
+              ${open ? `<div class="stage-detail">
+                ${st.detail.map(([nm, amt, tag, goto]) => `
+                  <button type="button" data-goto="${goto}">
+                    <span>${nm}${tag ? ` <i class="hint-tag ${tag === '자동' ? 'auto' : ''}">${tag}</i>` : ''}</span>
+                    <b class="${amt < 0 ? 'minus' : ''}">${amt < 0 ? '−' : ''}${won(Math.abs(amt))}</b>
+                  </button>`).join('')}
+                ${st.note ? `<div class="stage-note">${st.note}</div>` : ''}
+              </div>` : ''}
+            </div>`).join('')}
+          <div class="stage final">
+            <div class="stage-head"><span>남는 금액</span>
+              <b class="${s.remaining < 0 ? 'minus' : 'plus'}">${won(s.remaining)}</b></div>
+          </div>
+        </div>
+        ${open ? `<div class="flow-legend">
+          <span><i class="hint-tag auto">자동</i>내역을 적지 않아도 나간 것으로 봅니다</span>
+          <span><i class="hint-tag">입력분</i>적은 만큼만 반영됩니다</span>
+          <span><i class="keep-dot"></i>적금은 나가지만 자산으로 쌓입니다</span>
+        </div>` : ''}
+      </article>`;
   }
 
   /* --- 12. 화면: 월별 ----------------------------------------------------- */
@@ -3292,7 +3288,7 @@
     app.space = { code: row.space_code, name: row.space_name, actor: row.actor,
                   secret: savedSecret };
     restoreCache(row.space_code);
-    app.screen = 'app';
+    app.screen = 'app'; armBackGuard();
     render();
 
     try {
@@ -3325,7 +3321,7 @@
 
     localStorage.setItem(`clover-secret-${code}`, secret);
     app.space = { code, name: spaceName, actor, secret };
-    app.screen = 'app';
+    app.screen = 'app'; armBackGuard();
     app.tab = 'home';   // 기본값이 이미 채워져 있으므로 바로 홈을 보여준다
     await readSpace({ force: true });
     startRealtime();
@@ -3362,7 +3358,7 @@
 
     localStorage.setItem(`clover-secret-${code}`, secret);
     app.space = { code, name: '우리집', actor, secret };
-    app.screen = 'app';
+    app.screen = 'app'; armBackGuard();
     await readSpace({ force: true });
     startRealtime();
     render();
@@ -3409,9 +3405,19 @@
     const guide = t.closest('[data-tab="guide"]');
     if (guide) { window.open('./guide.html', '_blank', 'noopener'); return; }
 
+    // 홈에서 흐름/모으는돈 펼침 — 한 번에 하나만 열어 스크롤을 줄인다
+    const homeOpen = t.closest('[data-home-open]');
+    if (homeOpen) {
+      const v = homeOpen.dataset.homeOpen;
+      app.homeOpen = app.homeOpen === v ? null : v;
+      render();
+      return;
+    }
+
     const goto = t.closest('[data-goto]');
     if (goto) {
       const [tab, arg] = goto.dataset.goto.split(':');
+      const from = app.tab;
       app.tab = tab;
       // 화면마다 두 번째 값의 뜻이 다르다. 설정은 항목 종류, 예산은 보기 대상.
       if (arg) {
@@ -3918,7 +3924,7 @@
         app.lastError = '';
         if (app.passwordReturn) {
           app.passwordReturn = '';
-          app.screen = 'app';
+          app.screen = 'app'; armBackGuard();
           render();
           toast('비밀번호를 변경했습니다.');
         } else {
@@ -3938,6 +3944,29 @@
   });
 
   /* --- 21. 부팅 ----------------------------------------------------------- */
+
+  /* 브라우저 뒤로가기를 앱 내부 뎁스로 처리한다.
+     한 번 뒤로 = 펼친 행 닫기 → 서브 화면이면 더보기로 → 홈으로.
+     홈에서 한 번 더 뒤로 눌러야 앱을 나간다. */
+  const SUB_TABS = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets'];
+  function goBackOneDepth() {
+    if (app.screen !== 'app') return false;
+    if (app.openRow) { app.openRow = null; render(); return true; }
+    if (app.homeOpen) { app.homeOpen = null; render(); return true; }
+    if (SUB_TABS.includes(app.tab)) { app.tab = 'more'; render(); return true; }
+    if (app.tab !== 'home') { app.tab = 'home'; render(); return true; }
+    return false;
+  }
+  function armBackGuard() {
+    // 앱 화면에 들어올 때 히스토리에 한 칸 쌓아 첫 뒤로가기를 잡는다
+    try { history.pushState({ clover: true }, ''); } catch {}
+  }
+  window.addEventListener('popstate', () => {
+    if (goBackOneDepth()) {
+      // 아직 앱 안이면 다시 한 칸 쌓아 브라우저가 나가지 않게 한다
+      try { history.pushState({ clover: true }, ''); } catch {}
+    }
+  });
 
   async function boot() {
     app.device = loadDevice();

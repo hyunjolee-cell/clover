@@ -1269,3 +1269,80 @@ button.hero-item:active { transform: none; }
 .sv-amt small { display: block; font-size: 11px; color: var(--g400); font-weight: 600; }
 
 @media (min-width: 700px) { .sv-split { grid-template-columns: 1fr 1fr; } }
+
+/* 오늘 카드 안 개인 생활비 (예산 카드 흡수) */
+.today-people {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-top: 4px; padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.2);
+}
+.today-people button {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  min-height: 0; padding: 8px 11px;
+  background: rgba(255,255,255,.14); border: none; border-radius: 9px;
+  color: #fff; font: inherit; font-variant-numeric: tabular-nums;
+}
+.today-people button:hover { background: rgba(255,255,255,.22); }
+.today-people span { font-size: 12.5px; color: rgba(255,255,255,.85); }
+.today-people b { font-size: 13.5px; font-weight: 700; }
+
+/* 돈의 흐름 4단계 접기 */
+.flow-card .flow-toggle {
+  width: 100%; background: none; border: none; cursor: pointer;
+  margin-bottom: 12px; padding: 0;
+}
+.fold-hint {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 13px; font-weight: 600; color: var(--blue);
+}
+.flow-stages { display: grid; gap: 8px; }
+.stage {
+  background: var(--g50); border-radius: var(--r-btn); overflow: hidden;
+}
+.stage-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 13px 14px; font-variant-numeric: tabular-nums;
+}
+.stage-head span { font-weight: 700; font-size: 14.5px; }
+.stage-head b { font-weight: 700; font-size: 15px; }
+.stage.final { background: var(--g900); }
+.stage.final .stage-head span, .stage.final .stage-head b { color: #fff; }
+.stage-detail {
+  display: grid; gap: 2px; padding: 0 14px 12px;
+}
+.stage-detail button {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  width: 100%; min-height: 0; padding: 9px 8px;
+  background: none; border: none; border-top: 1px solid var(--g200);
+  font: inherit; text-align: left; font-variant-numeric: tabular-nums;
+}
+.stage-detail button:hover { background: #fff; }
+.stage-detail span { color: var(--g600); font-size: 13.5px; }
+.stage-detail b { font-weight: 600; }
+.stage-note {
+  padding: 8px 8px 0; font-size: 12px; color: var(--green-t); font-weight: 600;
+}
+.keep { color: var(--green); }
+
+/* 모으는 돈 그룹 접기 */
+.sv-col-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  width: 100%; min-height: 0; padding: 14px; cursor: pointer;
+  background: none; border: none; font: inherit; text-align: left;
+}
+.sv-col-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 7px; }
+.sv-col-title i {
+  font-style: normal; font-size: 11px; font-weight: 700;
+  padding: 1.5px 7px; border-radius: 999px;
+  background: rgba(0,0,0,.06); color: var(--g500);
+}
+.sv-col.flex .sv-col-title { color: var(--green-t); }
+.sv-col.long .sv-col-title { color: var(--blue-deep); }
+.sv-col-head b {
+  font-size: 15.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.sv-col-head b .ico { color: var(--g300); }
+.sv-col .note { padding: 0 14px; }
+.sv-col .sv-row { margin: 6px 14px; width: auto; }
+.sv-col .sv-row:last-child { margin-bottom: 14px; }
