@@ -34,8 +34,10 @@
   const ACTORS = ['현조', '신영'];
   const OWNERS = ['현조', '신영', '공동'];
   /* 한 번 눌러 바로 입력할 수 있는 유형. 자주 쓰는 순서로 둔다. */
-  const QUICK_CATEGORIES = ['생활비', '외식', '장보기', '생필품', '경조사비',
-                            '병원·약국', '교통', '문화·여가', '선물', '기타'];
+  /* 입력 유형칩. 그냥 추가하면 기본은 공동생활비.
+     아래 6개는 따로 떼어 관리하는 카테고리다. */
+  const DEFAULT_CATEGORY = '공동생활비';
+  const QUICK_CATEGORIES = ['경조사비', '비상금적금', '여행적금', '옷적금', '부모님', '여행'];
 
   /* 새 항목을 만들 때 고르는 목록.
      매번 이름을 직접 치지 않아도 되도록 자주 쓰는 것을 미리 담아 둔다. */
@@ -1537,7 +1539,7 @@
           <input name="date" type="date" value="${esc(x.date)}"></label>
         <label class="field"><span>카테고리</span>
           <select name="category">
-            ${[...new Set([...QUICK_CATEGORIES, x.category])].filter(Boolean).map(c =>
+            ${[...new Set([DEFAULT_CATEGORY, ...QUICK_CATEGORIES, x.category])].filter(Boolean).map(c =>
               `<option ${x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
           </select></label>
         <label class="field"><span>누가 결제</span>${ownerSelect('owner', x.owner)}</label>
@@ -1570,20 +1572,25 @@
           <div class="card-head">
             <div>
               <h3 class="accent">공동 생활비 사용내역</h3>
-              <small>외식·생필품처럼 함께 쓴 돈을 적습니다</small>
+              <small>함께 쓴 돈을 적습니다 · 그냥 추가하면 공동생활비</small>
             </div>
-            <button class="accent-btn" type="button" data-add="transaction">직접 추가</button>
           </div>
 
           <div class="quick-cats">
-            <span class="quick-label">자주 쓰는 항목</span>
+            <span class="quick-label">유형을 누르면 바로 아래에 만들어집니다</span>
             <div class="quick-row">
+              <button type="button" class="quick-chip main" data-quick-cat="${DEFAULT_CATEGORY}">
+                ${icon('plus', 14)}공동생활비
+              </button>
               ${QUICK_CATEGORIES.map(c => `
                 <button type="button" class="quick-chip" data-quick-cat="${esc(c)}">
                   ${icon('plus', 14)}${esc(c)}
                 </button>`).join('')}
             </div>
           </div>
+
+          <!-- 유형칩 바로 아래에 방금 만든/최근 내역이 온다 -->
+          <div class="list" id="txList">${transactionRows()}</div>
 
           <div class="filter-bar single">
             <label class="field"><span>카테고리로 걸러 보기</span>
@@ -1599,8 +1606,6 @@
             ${OWNERS.map(o =>
               `<button type="button" data-goto="budgets:${o}"><span class="${ownerClass(o)}-text">${o}</span><b>${won(spendByOwner(app.month, o))}${icon('chevron', 14)}</b></button>`).join('')}
           </div>
-
-          <div class="list">${transactionRows()}</div>
         </article>
 
         <article class="card">
@@ -2330,16 +2335,16 @@
           ${monthNav()}
         </div>
 
-        <div class="grid three">
-          <button class="card metric" type="button" data-goto="settings:income"><small>이 달 수입</small>
-            <strong>${won(s.income)}</strong>
-            <small>정기 ${won(s.base)} + 보너스 ${won(s.bonus)}</small></button>
-          <button class="card metric" type="button" data-goto="monthly"><small>이 달 생활비 사용</small>
-            <strong class="minus">${won(s.spend)}</strong>
-            <small>${transactionsOf(app.month).length}건</small></button>
-          <button class="card metric" type="button" data-goto="settings:fixed"><small>고정 지출·저축</small>
-            <strong class="minus">${won(s.fixed + s.utility + s.saving)}</strong>
-            <small>고정비·공과금·적금</small></button>
+        <div class="cal-summary">
+          <button class="card metric" type="button" data-goto="settings:income">
+            <small>이 달 수입</small>
+            <strong>${won(s.income)}</strong></button>
+          <button class="card metric" type="button" data-goto="monthly">
+            <small>생활비 사용</small>
+            <strong class="minus">${won(s.spend)}</strong></button>
+          <button class="card metric" type="button" data-goto="settings:fixed">
+            <small>고정·저축</small>
+            <strong class="minus">${won(s.fixed + s.utility + s.saving)}</strong></button>
         </div>
 
         <article class="card">
@@ -3065,7 +3070,7 @@
       bonus: { id, name: '새 보너스', owner: '공동',
                date: defaultDate, amount: 0, memo: '' },
       transaction: { id, date: defaultDate, owner: '공동',
-                     category: '생활비', place: '', amount: 0, memo: '' },
+                     category: DEFAULT_CATEGORY, place: '', amount: 0, memo: '' },
       scenario: { id, name: '새 시나리오', startMonth: app.month, months: 12,
                   annualReturn: 3, monthlyAdjustment: 0, savingIds: null,
                   assetIds: null, debtIds: null, includeBonus: false, goalId: '' },
@@ -3576,7 +3581,7 @@
       await mutate(
         state => {
           state.transactions.push({
-            id, date, owner: '공동', category: '생활비',
+            id, date, owner: '공동', category: DEFAULT_CATEGORY,
             place: '', amount: 0, memo: ''
           });
         },
@@ -3601,7 +3606,7 @@
       await mutate(
         state => {
           state.transactions.push({
-            id, date, owner: '공동', category: '생활비',
+            id, date, owner: '공동', category: DEFAULT_CATEGORY,
             place: '', amount: 0, memo: ''
           });
         },
@@ -3640,9 +3645,13 @@
           success: `${category} 항목을 만들었습니다. 금액을 채워주세요.`
         }
       );
+      // 유형칩 바로 아래에 만든 행으로 이동하고 금액 칸에 커서
       const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
-      row?.scrollIntoView({ block: 'center' });
-      row?.querySelector('input[name="amount"]')?.focus();
+      if (row) {
+        row.classList.add('just-added');
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.querySelector('input[name="place"]')?.focus();
+      }
       return;
     }
 

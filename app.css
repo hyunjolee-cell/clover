@@ -1020,23 +1020,24 @@ button.hero-item:active { transform: none; }
 
 .trend {
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-  gap: 4px; align-items: end;
-  height: 150px; padding-top: 8px;
+  gap: 3px; align-items: end;
+  height: 92px; padding-top: 4px;      /* 화면 안에 들어오도록 축소 */
+  overflow: hidden;
 }
 .trend-col {
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
-  gap: 4px; height: 100%; min-height: 0; padding: 0;
-  background: none; border: none; cursor: pointer; border-radius: 8px;
+  gap: 3px; height: 100%; min-width: 0; min-height: 0; padding: 0;
+  background: none; border: none; cursor: pointer; border-radius: 6px;
 }
 .trend-col:hover { background: var(--g50); }
 .trend-col:active { transform: none; }
 .trend-val {
-  font-size: 9.5px; font-weight: 700; color: var(--g500);
+  font-size: 8.5px; font-weight: 700; color: var(--g500);
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .trend-bar {
-  width: 100%; max-width: 26px; min-height: 3px;
-  background: var(--blue-pale); border-radius: 4px 4px 0 0;
+  width: 100%; max-width: 16px; min-height: 3px;
+  background: var(--blue-pale); border-radius: 3px 3px 0 0;
   transition: height .2s;
 }
 .trend-bar.neg { background: #F0C4C4; }
@@ -1449,3 +1450,22 @@ button.hero-item:active { transform: none; }
 .ch-plot.y12 { gap: 3px; }
 .ch-plot.y12 .ch-x { font-size: 9px; }
 .ch-plot.y12 .ch-bar { max-width: 6px; }
+
+/* 달력 요약 — 모바일에서도 3개 카드를 한 줄에 */
+.cal-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cal-summary .card.metric { padding: 12px 10px; text-align: center; }
+.cal-summary .card.metric small { font-size: 11px; }
+.cal-summary .card.metric strong { font-size: 15px; margin-top: 3px; }
+
+/* 유형칩 — 공동생활비(기본)를 강조 */
+.quick-chip.main {
+  background: var(--blue); color: #fff; border-color: var(--blue);
+}
+.quick-chip.main:hover { background: var(--blue-dark); }
+
+/* 방금 만든 생활비 행 잠깐 강조 */
+.item.just-added { animation: flash 1.4s ease-out; }
+@keyframes flash {
+  0% { box-shadow: 0 0 0 3px var(--sky-bar); }
+  100% { box-shadow: none; }
+}
