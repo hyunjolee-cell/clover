@@ -226,27 +226,28 @@
 
     /* 적금은 매달 넣는 금액과 지금까지 모인 잔액을 함께 둔다.
        잔액은 현조님 통장 화면 기준이며 앱에서 언제든 고칠 수 있다. */
-    const saving = (name, owner, amount, balance = 0, memo = '') => {
+    const saving = (name, owner, amount, balance = 0, purpose = 'longterm', memo = '') => {
       const r = row(name, owner, amount, memo);
       r.startBalance = balance;
       r.startMonth = currentMonth;
+      r.purpose = purpose;    // flexible: 언제든 꺼내 씀 / longterm: 목적까지 모음
       r.withdrawals = [];
       return r;
     };
 
     s.savings = [
-      saving('청년적금', '현조', 500000),
-      saving('청년적금', '신영', 500000),
-      saving('주택청약', '현조', 100000),
-      saving('주택청약', '신영', 100000),
-      saving('집마련적금', '공동', 2050000, 11841368,
+      saving('청년적금', '현조', 500000, 0, 'longterm'),
+      saving('청년적금', '신영', 500000, 0, 'longterm'),
+      saving('주택청약', '현조', 100000, 0, 'longterm'),
+      saving('주택청약', '신영', 100000, 0, 'longterm'),
+      saving('집마련적금', '공동', 2050000, 11841368, 'longterm',
              '월별 상이, 기타 소득 발생 시 추가 = 유동저축'),
-      saving('부모님적금', '공동', 400000, 3166350),
-      saving('비상금적금', '공동', 120000, 241213),
-      saving('여행적금', '공동', 100000, 4192, '돈 남으면 넣기'),
-      saving('옷적금', '공동', 100000, 32244, '돈 남으면 넣기'),
-      saving('조카적금', '공동', 30000, 918423),
-      saving('경조사', '공동', 100000, 984477)
+      saving('부모님적금', '공동', 400000, 3166350, 'longterm'),
+      saving('조카적금', '공동', 30000, 918423, 'longterm'),
+      saving('비상금적금', '공동', 120000, 241213, 'flexible'),
+      saving('여행적금', '공동', 100000, 4192, 'flexible', '돈 남으면 넣기'),
+      saving('옷적금', '공동', 100000, 32244, 'flexible', '돈 남으면 넣기'),
+      saving('경조사', '공동', 100000, 984477, 'flexible')
     ];
 
     // 쓰는 만큼 달라지는 항목은 시트의 소분류 그대로 나눠서 예산으로 잡는다.
@@ -357,6 +358,10 @@
     for (const x of s.savings) {
       x.startBalance = num(x.startBalance);
       x.startMonth = String(x.startMonth || x.history[0]?.from || currentMonth).slice(0, 7);
+      // 용도: flexible(언제든 꺼내 쓰는 돈) / longterm(목적까지 모으는 돈)
+      if (x.purpose !== 'flexible' && x.purpose !== 'longterm') {
+        x.purpose = /경조사|여행|옷|비상|생활|용돈/.test(x.name) ? 'flexible' : 'longterm';
+      }
       if (!Array.isArray(x.withdrawals)) x.withdrawals = [];
       x.withdrawals = x.withdrawals.map(w => ({
         id: w.id || uid(),
@@ -1223,6 +1228,61 @@
 
   /* --- 11. 화면: 홈 ------------------------------------------------------- */
 
+  /* 홈에 넣는 "얼마 모았고 항목별로 얼마 쌓였나" 패널.
+     사용 가능(언제든 꺼냄)과 장기(목적까지)를 나눠 보여준다. */
+  function savingsPanel() {
+    const savings = app.state.savings;
+    const monthPut = savingTotal(app.month);          // 이번 달 넣은 돈
+    const flex = savings.filter(sv => sv.purpose === 'flexible');
+    const longt = savings.filter(sv => sv.purpose === 'longterm');
+    const flexTotal = flex.reduce((s, sv) => s + savingBalance(sv), 0);
+    const longTotal = longt.reduce((s, sv) => s + savingBalance(sv), 0);
+
+    const rows = list => list.length ? list
+      .sort((a, b) => savingBalance(b) - savingBalance(a))
+      .map(sv => {
+        const bal = savingBalance(sv);
+        const monthly = historyValue(sv.history, app.month);
+        return `
+          <button type="button" class="sv-row" data-open-saving="${sv.id}">
+            <span class="sv-name">${esc(sv.name)}${ownerTag(sv.owner)}</span>
+            <span class="sv-amt">${won(bal)}<small>매달 +${shortWon(monthly)}</small></span>
+          </button>`;
+      }).join('') : `<p class="empty">항목이 없습니다.</p>`;
+
+    return `
+      <article class="card sv-panel">
+        <div class="card-head">
+          <div>
+            <h3>모으는 돈</h3>
+            <small>이번 달 <b class="plus">+${won(monthPut)}</b> 넣었습니다 ·
+              전체 ${won(flexTotal + longTotal)} 모임</small>
+          </div>
+          <button class="secondary" type="button" data-goto="settings:saving">적금 관리</button>
+        </div>
+
+        <div class="sv-split">
+          <div class="sv-col flex">
+            <div class="sv-col-head">
+              <span>언제든 쓸 수 있는 돈</span>
+              <b>${won(flexTotal)}</b>
+            </div>
+            <p class="note">경조사·여행·옷처럼 필요할 때 꺼내 씁니다</p>
+            ${rows(flex)}
+          </div>
+          <div class="sv-col long">
+            <div class="sv-col-head">
+              <span>목적까지 모으는 돈</span>
+              <b>${won(longTotal)}</b>
+            </div>
+            <p class="note">집·청약처럼 목표를 위해 장기 보관합니다</p>
+            ${rows(longt)}
+          </div>
+        </div>
+        <p class="note">항목을 누르면 잔액을 고치거나 꺼내 쓸 수 있습니다.</p>
+      </article>`;
+  }
+
   function homeView() {
     const s = summary();
     const sharedUsed = s.spend;
@@ -1319,6 +1379,8 @@
               <span><i class="keep-dot"></i>적금은 나가지만 자산으로 쌓입니다</span>
             </div>
           </article>
+
+          ${savingsPanel()}
 
           <article class="card">
             <div class="card-head">
@@ -1534,7 +1596,12 @@
             <label class="field"><span>지금까지 모인 돈</span>
               <input name="startBalance" inputmode="numeric" value="${num(x.startBalance)}"></label>
             <label class="field"><span>잔액 기준월</span>
-              <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>` : ''}
+              <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>
+            <label class="field"><span>용도</span>
+              <select name="purpose">
+                <option value="flexible" ${x.purpose === 'flexible' ? 'selected' : ''}>언제든 쓰는 돈</option>
+                <option value="longterm" ${x.purpose === 'longterm' ? 'selected' : ''}>목적까지 모으는 돈</option>
+              </select></label>` : ''}
           <label class="field wide"><span>메모</span>
             <input name="memo" value="${esc(x.memo || '')}" placeholder="비고를 적어두면 나중에 도움이 됩니다"></label>
           ${kind === 'saving' ? `
@@ -2893,7 +2960,8 @@
       income: { id, name: '새 정기소득', owner: '공동', memo: '', history: h },
       fixed: { id, name: '새 고정비', owner: '공동', memo: '', history: h },
       utility: { id, name: '새 공과금', memo: '', estimateHistory: h },
-      saving: { id, name: '새 적금', owner: '공동', memo: '', history: h },
+      saving: { id, name: '새 적금', owner: '공동', memo: '', history: h,
+                startBalance: 0, startMonth: app.month, purpose: 'longterm', withdrawals: [] },
       budget: { id, name: '새 예산', owner: '공동', memo: '', history: h },
       account: { id, name: '새 통장', owner: '공동', kind: 'spending', memo: '' },
       card: { id, name: '새 카드', accountId: app.state.accounts[0]?.id || '', memo: '' },
@@ -3013,6 +3081,7 @@
           if (kind === 'saving') {
             if (d.has('startBalance')) x.startBalance = num(d.get('startBalance'));
             if (d.get('startMonth')) x.startMonth = String(d.get('startMonth')).slice(0, 7);
+            if (d.get('purpose')) x.purpose = d.get('purpose');
           }
 
         } else if (kind === 'utility') {
@@ -3357,6 +3426,19 @@
       const amount = form?.querySelector('input[name="amount"]');
       amount?.focus();
       amount?.select();
+      return;
+    }
+
+    // 홈의 적금 항목을 누르면 설정으로 가서 그 항목을 펼친다
+    const openSaving = t.closest('[data-open-saving]');
+    if (openSaving) {
+      app.tab = 'settings';
+      app.settingsGroup = 'saving';
+      app.openRow = `saving:${openSaving.dataset.openSaving}`;
+      render();
+      window.scrollTo({ top: 0 });
+      const form = document.querySelector(`form[data-row="saving"][data-id="${openSaving.dataset.openSaving}"]`);
+      form?.scrollIntoView({ block: 'center' });
       return;
     }
 
