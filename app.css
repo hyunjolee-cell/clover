@@ -17,6 +17,7 @@
   --blue-pale: #C7D7F5;
   --sky: #E8EFFB;
   --sky-light: #F4F7FD;
+  --sky-bar: #7AA5EE;         /* 그래프 지출 막대용 하늘색 */
 
   /* 뉴트럴 그레이 */
   --g50: #FAFAFA;
@@ -301,22 +302,29 @@ select {
 }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* 월 이동 — 작고 한 덩어리로 */
+/* 월 이동 — 작고 한 덩어리로. 화살표는 크고 굵게, 드롭다운과 겹치지 않게 */
 .month-nav {
   display: inline-flex; align-items: center; gap: 0; flex-shrink: 0;
   background: var(--g100); border-radius: 10px; overflow: hidden;
 }
 .month-nav .icon-btn {
-  min-height: 34px; width: 30px; background: none; border-radius: 0;
-  font-size: 17px; color: var(--g600);
+  min-height: 36px; width: 34px; background: none; border-radius: 0;
+  font-size: 22px; font-weight: 800; color: var(--g700);
+  position: relative; z-index: 2;    /* 입력 위로 올려 겹쳐 눌리지 않게 */
 }
 .month-nav .icon-btn:hover { background: var(--g200); }
 .month-nav input {
-  min-width: 118px; min-height: 34px; padding: 4px 6px;
-  font-size: 13px; font-weight: 600; text-align: center;
+  min-width: 112px; min-height: 36px; padding: 4px 4px;
+  font-size: 13px; font-weight: 700; text-align: center;
   background: none; border-radius: 0;
 }
 .month-nav input:focus { box-shadow: none; background: var(--surface); }
+/* 네이티브 캘린더 아이콘을 숨긴다 — 아이콘 대신 입력칸 전체가 달력을 연다.
+   이 아이콘이 오른쪽 화살표와 붙어 같이 눌리던 문제를 없앤다. */
+.month-nav input::-webkit-calendar-picker-indicator {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  margin: 0; padding: 0; opacity: 0; cursor: pointer;
+}
 
 .grid { display: grid; gap: 12px; }
 .grid.two { grid-template-columns: 1fr; }
@@ -1382,8 +1390,8 @@ button.hero-item:active { transform: none; }
 .ch-legend b { color: var(--g900); font-weight: 700; font-variant-numeric: tabular-nums; }
 .ch-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 .c-in { background: var(--blue); }
-.c-out { background: var(--red); }
-.c-save { background: var(--green); }
+.c-out { background: var(--sky-bar); }
+.c-save { background: #fff; box-shadow: inset 0 0 0 1px var(--g300); }
 
 .ch-plot {
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
@@ -1403,37 +1411,38 @@ button.hero-item:active { transform: none; }
   border-radius: 3px 3px 0 0;
 }
 .ch-bar.c-in { background: var(--blue); }
-.ch-bar.c-out { background: var(--red); }
-.ch-bar.c-save { background: var(--green); }
-.ch-col.now .ch-bar { box-shadow: 0 0 0 1.5px var(--g900); }
+.ch-bar.c-out { background: var(--sky-bar); }
+.ch-bar.c-save { background: #fff; box-shadow: inset 0 0 0 1px var(--g300); }
+.ch-col.now .ch-bar { outline: 1.5px solid var(--g900); outline-offset: -1px; }
 .ch-x { font-size: 10px; color: var(--g400); font-weight: 600; }
 .ch-col.now .ch-x { color: var(--g900); font-weight: 700; }
 
 .chart-card.big .ch-bar { max-width: 14px; }
 .chart-card.big .ch-x { font-size: 11px; }
 
-/* 그래프 데이터 라벨 (수입·지출·적금 만원) */
-/* 데이터 라벨 — 색점 + 항목명 + 금액을 한 줄씩, 무슨 막대인지 바로 알게 */
+/* 데이터 라벨 — 항목별 색 칩. 가운데 정렬, 수입은 파란 칩에 흰 글씨 */
 .ch-labels {
-  display: grid; gap: 1px; margin-top: 4px;
-  padding: 4px 3px 0; border-top: 1px solid var(--g100);
+  display: grid; gap: 3px; margin-top: 5px;
+  padding: 5px 2px 0; border-top: 1px solid var(--g100);
 }
 .ch-labels span {
-  display: flex; align-items: center; gap: 4px;
-  font-size: 10.5px; font-weight: 600; color: var(--g600);
-  white-space: nowrap; justify-content: center;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700;
+  white-space: nowrap; text-align: center;
+  padding: 2px 5px; border-radius: 5px;
 }
-.ch-labels span i {
-  width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0;
+.ch-labels span i { display: none; }
+.ch-labels span b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.ch-labels .c-in { background: var(--blue); color: #fff; }
+.ch-labels .c-in b { color: #fff; }
+.ch-labels .c-out { background: var(--sky-bar); color: #fff; }
+.ch-labels .c-out b { color: #fff; }
+.ch-labels .c-save { background: #fff; box-shadow: inset 0 0 0 1px var(--g300); color: var(--g700); }
+.ch-labels .c-save b { color: var(--g900); }
+.ch-none {
+  background: none !important; box-shadow: none !important;
+  color: var(--g400) !important; font-weight: 500 !important; font-size: 10px;
 }
-.ch-labels span b {
-  font-weight: 800; color: var(--g900); font-variant-numeric: tabular-nums;
-  margin-left: auto;
-}
-.ch-labels .c-in i { background: var(--blue); }
-.ch-labels .c-out i { background: var(--red); }
-.ch-labels .c-save i { background: var(--green); }
-.ch-none { color: var(--g400) !important; font-weight: 500 !important; font-size: 10px; }
 .ch-col.future .ch-bars { opacity: .35; }
 
 /* 12개월 모드: 라벨 없이 막대만 (좁아서), 범례로 안내 */
