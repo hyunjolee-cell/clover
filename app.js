@@ -502,6 +502,7 @@
     budgetView: 'all',     // 예산 세부 화면에서 보고 있는 대상
     openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
     homeOpen: null,        // 홈에서 펼친 섹션 (flow / sv:flex / sv:long)
+    chartBig: false,       // 홈 그래프 전체보기
     passwordReturn: '',    // 비밀번호 변경 후 돌아갈 화면
     pendingToast: '',      // render 후 표시할 토스트
     sync: '준비 중',
@@ -1293,6 +1294,64 @@
       </article>`;
   }
 
+  /* 홈 상단 그래프 — 최근 몇 달의 수입·지출·적금을 묶음 막대로.
+     전체보기를 누르면 크게, 12개월로 본다. app.chartBig 로 상태를 둔다. */
+  function monthlyStats(month) {
+    const income = incomeTotal(month);
+    const expense = fixedTotal(month) + utilityTotal(month)
+      + personalBudget(month) + sharedSpend(month);
+    const saving = savingTotal(month);
+    return { income, expense, saving };
+  }
+
+  function trendChart() {
+    const big = app.chartBig;
+    const n = big ? 12 : 6;
+    const months = [];
+    for (let i = n - 1; i >= 0; i--) months.push(shiftMonth(app.month, -i));
+    const data = months.map(m => ({ m, ...monthlyStats(m) }));
+    const max = Math.max(1, ...data.flatMap(d => [d.income, d.expense, d.saving]));
+
+    const series = [
+      ['수입', 'income', 'c-in'],
+      ['지출', 'expense', 'c-out'],
+      ['적금', 'saving', 'c-save']
+    ];
+    const H = big ? 150 : 96;      // 막대 영역 높이(px)
+
+    const cols = data.map(d => {
+      const isNow = d.m === app.month;
+      return `
+        <div class="ch-col ${isNow ? 'now' : ''}">
+          <div class="ch-bars" style="height:${H}px">
+            ${series.map(([, key, cls]) => `
+              <div class="ch-bar ${cls}" style="height:${Math.max(2, (d[key] / max) * H)}px"
+                   title="${key} ${won(d[key])}"></div>`).join('')}
+          </div>
+          <span class="ch-x">${Number(d.m.slice(5))}월</span>
+        </div>`;
+    }).join('');
+
+    const cur = data[data.length - 1];
+    return `
+      <article class="card chart-card ${big ? 'big' : ''}">
+        <div class="card-head">
+          <div>
+            <h3>수입·지출·적금 추이</h3>
+            <small>최근 ${n}개월</small>
+          </div>
+          <button class="secondary" type="button" data-chart-big="${big ? '0' : '1'}">
+            ${big ? '작게 보기' : '전체보기'}
+          </button>
+        </div>
+        <div class="ch-legend">
+          ${series.map(([label, key, cls]) =>
+            `<span><i class="${cls}"></i>${label} <b>${won(cur[key])}</b></span>`).join('')}
+        </div>
+        <div class="ch-plot">${cols}</div>
+      </article>`;
+  }
+
   function homeView() {
     const s = summary();
     const sharedUsed = s.spend;
@@ -1306,6 +1365,9 @@
           <div><span class="eyebrow">홈</span><h2>${monthLabel(app.month)}</h2></div>
           ${monthNav()}
         </div>
+
+        <!-- 월 제목 바로 아래: 수입·지출·적금 6개월 추이 그래프 -->
+        ${trendChart()}
 
         <!-- 오늘 카드: 남은 공동생활비 + 예산 막대 + 개인 생활비까지 흡수 -->
         <article class="today-card ${over ? 'over' : ''}">
@@ -3407,6 +3469,9 @@
     // 홈의 흐름 줄에서 해당 설정 화면으로 바로 이동
     const guide = t.closest('[data-tab="guide"]');
     if (guide) { window.open('./guide.html', '_blank', 'noopener'); return; }
+
+    const chartBig = t.closest('[data-chart-big]');
+    if (chartBig) { app.chartBig = chartBig.dataset.chartBig === '1'; render(); return; }
 
     // 홈에서 흐름/모으는돈 펼침 — 한 번에 하나만 열어 스크롤을 줄인다
     const homeOpen = t.closest('[data-home-open]');
