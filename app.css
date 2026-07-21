@@ -1412,24 +1412,30 @@ button.hero-item:active { transform: none; }
 .chart-card.big .ch-x { font-size: 11px; }
 
 /* 그래프 데이터 라벨 (수입·지출·적금 만원) */
+/* 데이터 라벨 — 색점 + 항목명 + 금액을 한 줄씩, 무슨 막대인지 바로 알게 */
 .ch-labels {
-  display: grid; gap: 1px; margin-top: 4px; text-align: center;
-  line-height: 1.25;
+  display: grid; gap: 2px; margin-top: 6px;
+  padding: 6px 4px 0; border-top: 1px solid var(--g100);
 }
 .ch-labels span {
-  font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 600; color: var(--g600);
+  white-space: nowrap; justify-content: center;
 }
-.ch-labels .c-in { color: var(--blue); }
-.ch-labels .c-out { color: var(--red); }
-.ch-labels .c-save { color: var(--green); }
+.ch-labels span i {
+  width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0;
+}
+.ch-labels span b {
+  font-weight: 800; color: var(--g900); font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.ch-labels .c-in i { background: var(--blue); }
+.ch-labels .c-out i { background: var(--red); }
+.ch-labels .c-save i { background: var(--green); }
+.ch-none { color: var(--g400) !important; font-weight: 500 !important; font-size: 10px; }
+.ch-col.future .ch-bars { opacity: .35; }
 
-/* 12개월 모드는 좁으니 라벨을 더 작게 */
+/* 12개월 모드: 라벨 없이 막대만 (좁아서), 범례로 안내 */
 .ch-plot.y12 { gap: 3px; }
-.ch-plot.y12 .ch-labels span { font-size: 8.5px; }
 .ch-plot.y12 .ch-x { font-size: 9px; }
 .ch-plot.y12 .ch-bar { max-width: 6px; }
-
-@media (max-width: 420px) {
-  .ch-plot.y12 .ch-labels span { font-size: 8px; letter-spacing: -.03em; }
-}

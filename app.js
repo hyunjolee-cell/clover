@@ -1311,6 +1311,12 @@
     return man >= 10000 ? `${(man / 10000).toFixed(1)}억` : `${man.toLocaleString('ko-KR')}만`;
   };
 
+  /* 그래프용 통계. 아직 오지 않은 달(현재 달보다 미래)은 데이터가 없으므로 0. */
+  function chartStats(month) {
+    if (String(month) > currentMonth) return { income: 0, expense: 0, saving: 0, future: true };
+    return { ...monthlyStats(month), future: false };
+  }
+
   function trendChart() {
     const big = app.chartBig;
     const [year, mm] = app.month.split('-').map(Number);
@@ -1325,7 +1331,7 @@
     }
     const quarter = Math.floor((mm - 1) / 3) + 1;
 
-    const data = months.map(m => ({ m, ...monthlyStats(m) }));
+    const data = months.map(m => ({ m, ...chartStats(m) }));
     const max = Math.max(1, ...data.flatMap(d => [d.income, d.expense, d.saving]));
 
     const series = [
@@ -1333,22 +1339,24 @@
       ['지출', 'expense', 'c-out'],
       ['적금', 'saving', 'c-save']
     ];
-    const H = big ? 140 : 108;
+    const H = big ? 96 : 72;      // 이전보다 약 30% 낮춘 막대 높이
 
     const cols = data.map(d => {
       const isNow = d.m === app.month;
       return `
-        <div class="ch-col ${isNow ? 'now' : ''}">
+        <div class="ch-col ${isNow ? 'now' : ''} ${d.future ? 'future' : ''}">
           <div class="ch-bars" style="height:${H}px">
-            ${series.map(([, key, cls]) => `
-              <div class="ch-bar ${cls}" style="height:${Math.max(2, (d[key] / max) * H)}px"
-                   title="${key} ${won(d[key])}"></div>`).join('')}
+            ${series.map(([label, key, cls]) => `
+              <div class="ch-bar ${cls}"
+                   style="height:${d.future ? 0 : Math.max(2, (d[key] / max) * H)}px"
+                   title="${label} ${won(d[key])}"></div>`).join('')}
           </div>
           <span class="ch-x">${Number(d.m.slice(5))}월</span>
-          <div class="ch-labels">
-            ${series.map(([, key, cls]) =>
-              `<span class="${cls}">${manLabel(d[key]) || '·'}</span>`).join('')}
-          </div>
+          ${big ? '' : `<div class="ch-labels">
+            ${d.future ? '<span class="ch-none">기록 없음</span>'
+              : series.map(([label, key, cls]) =>
+                `<span class="${cls}"><i></i>${label} <b>${manLabel(d[key]) || '0'}만</b></span>`).join('')}
+          </div>`}
         </div>`;
     }).join('');
 
@@ -1357,16 +1365,17 @@
         <div class="card-head">
           <div>
             <h3>수입·지출·적금 추이</h3>
-            <small>${big ? `${year}년 1~12월` : `${year}년 ${quarter}분기 (${months.map(m => Number(m.slice(5))).join('·')}월)`} · 만원</small>
+            <small>${big ? `${year}년 1~12월`
+              : `${year}년 ${quarter}분기 · ${months.map(m => Number(m.slice(5))).join('·')}월`}</small>
           </div>
           <button class="secondary" type="button" data-chart-big="${big ? '0' : '1'}">
             ${big ? '분기로 보기' : '전체보기'}
           </button>
         </div>
-        <div class="ch-legend">
+        ${big ? `<div class="ch-legend">
           ${series.map(([label, , cls]) =>
             `<span><i class="${cls}"></i>${label}</span>`).join('')}
-        </div>
+        </div>` : ''}
         <div class="ch-plot ${big ? 'y12' : ''}">${cols}</div>
       </article>`;
   }
