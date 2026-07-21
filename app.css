@@ -1395,3 +1395,26 @@ button.hero-item:active { transform: none; }
 
 .chart-card.big .ch-bar { max-width: 14px; }
 .chart-card.big .ch-x { font-size: 11px; }
+
+/* 그래프 데이터 라벨 (수입·지출·적금 만원) */
+.ch-labels {
+  display: grid; gap: 1px; margin-top: 4px; text-align: center;
+  line-height: 1.25;
+}
+.ch-labels span {
+  font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ch-labels .c-in { color: var(--blue); }
+.ch-labels .c-out { color: var(--red); }
+.ch-labels .c-save { color: var(--green); }
+
+/* 12개월 모드는 좁으니 라벨을 더 작게 */
+.ch-plot.y12 { gap: 3px; }
+.ch-plot.y12 .ch-labels span { font-size: 8.5px; }
+.ch-plot.y12 .ch-x { font-size: 9px; }
+.ch-plot.y12 .ch-bar { max-width: 6px; }
+
+@media (max-width: 420px) {
+  .ch-plot.y12 .ch-labels span { font-size: 8px; letter-spacing: -.03em; }
+}

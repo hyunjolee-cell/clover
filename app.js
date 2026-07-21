@@ -1304,11 +1304,27 @@
     return { income, expense, saving };
   }
 
+  /* 만원 단위 라벨. 0이면 빈칸(막대 라벨이 지저분해지지 않게). */
+  const manLabel = v => {
+    if (!v) return '';
+    const man = Math.round(v / 10000);
+    return man >= 10000 ? `${(man / 10000).toFixed(1)}억` : `${man.toLocaleString('ko-KR')}만`;
+  };
+
   function trendChart() {
     const big = app.chartBig;
-    const n = big ? 12 : 6;
-    const months = [];
-    for (let i = n - 1; i >= 0; i--) months.push(shiftMonth(app.month, -i));
+    const [year, mm] = app.month.split('-').map(Number);
+
+    // 기본은 현재 달이 속한 분기 3개월(7월→7·8·9), 전체보기는 그 해 1~12월
+    let months;
+    if (big) {
+      months = Array.from({ length: 12 }, (_, i) => `${year}-${pad(i + 1)}`);
+    } else {
+      const qStart = Math.floor((mm - 1) / 3) * 3 + 1;   // 1·4·7·10
+      months = [0, 1, 2].map(i => `${year}-${pad(qStart + i)}`);
+    }
+    const quarter = Math.floor((mm - 1) / 3) + 1;
+
     const data = months.map(m => ({ m, ...monthlyStats(m) }));
     const max = Math.max(1, ...data.flatMap(d => [d.income, d.expense, d.saving]));
 
@@ -1317,7 +1333,7 @@
       ['지출', 'expense', 'c-out'],
       ['적금', 'saving', 'c-save']
     ];
-    const H = big ? 150 : 96;      // 막대 영역 높이(px)
+    const H = big ? 140 : 108;
 
     const cols = data.map(d => {
       const isNow = d.m === app.month;
@@ -1329,26 +1345,29 @@
                    title="${key} ${won(d[key])}"></div>`).join('')}
           </div>
           <span class="ch-x">${Number(d.m.slice(5))}월</span>
+          <div class="ch-labels">
+            ${series.map(([, key, cls]) =>
+              `<span class="${cls}">${manLabel(d[key]) || '·'}</span>`).join('')}
+          </div>
         </div>`;
     }).join('');
 
-    const cur = data[data.length - 1];
     return `
       <article class="card chart-card ${big ? 'big' : ''}">
         <div class="card-head">
           <div>
             <h3>수입·지출·적금 추이</h3>
-            <small>최근 ${n}개월</small>
+            <small>${big ? `${year}년 1~12월` : `${year}년 ${quarter}분기 (${months.map(m => Number(m.slice(5))).join('·')}월)`} · 만원</small>
           </div>
           <button class="secondary" type="button" data-chart-big="${big ? '0' : '1'}">
-            ${big ? '작게 보기' : '전체보기'}
+            ${big ? '분기로 보기' : '전체보기'}
           </button>
         </div>
         <div class="ch-legend">
-          ${series.map(([label, key, cls]) =>
-            `<span><i class="${cls}"></i>${label} <b>${won(cur[key])}</b></span>`).join('')}
+          ${series.map(([label, , cls]) =>
+            `<span><i class="${cls}"></i>${label}</span>`).join('')}
         </div>
-        <div class="ch-plot">${cols}</div>
+        <div class="ch-plot ${big ? 'y12' : ''}">${cols}</div>
       </article>`;
   }
 
