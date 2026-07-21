@@ -1469,3 +1469,12 @@ button.hero-item:active { transform: none; }
   0% { box-shadow: 0 0 0 3px var(--sky-bar); }
   100% { box-shadow: none; }
 }
+
+/* 달력 내역을 눌러 바로 수정 */
+button.day-item {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  min-height: 0;
+}
+button.day-item:hover { background: var(--g100); }
+button.day-item:active { transform: none; }
+button.day-item b .ico { color: var(--g300); vertical-align: middle; }

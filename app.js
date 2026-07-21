@@ -2370,16 +2370,25 @@
                 이 날짜로 지출 추가
               </button>
             </div>
-            ${detail.length ? `<div class="day-list">${detail.map(e => `
-              <div class="day-item ${e.type}">
+            ${detail.length ? `<div class="day-list">${detail.map(e => {
+              // 생활비·보너스는 눌러서 바로 고칠 수 있게 한다 (자동이체는 흐름도에서 관리)
+              const editable = e.type === 'spend' || e.type === 'income';
+              const attr = editable
+                ? `class="day-item ${e.type} tap" type="button" data-edit-tx="${e.type}:${e.id}"`
+                : `class="day-item ${e.type}"`;
+              const tag = editable ? 'button' : 'div';
+              return `
+              <${tag} ${attr}>
                 <div>
                   <b>${esc(e.name)}</b>
                   ${e.owner ? ownerTag(e.owner) : ''}
                   ${e.memo ? `<small>${esc(e.memo)}</small>` : ''}
                 </div>
                 <b class="${e.type === 'income' ? 'plus' : 'minus'}">
-                  ${e.type === 'income' ? '+' : '-'}${won(e.amount)}</b>
-              </div>`).join('')}</div>` : emptyRow('이 날짜에는 기록이 없습니다.')}
+                  ${e.type === 'income' ? '+' : '-'}${won(e.amount)}
+                  ${editable ? icon('chevron', 15) : ''}</b>
+              </${tag}>`;
+            }).join('')}</div>` : emptyRow('이 날짜에는 기록이 없습니다.')}
           </article>` : ''}
       </section>`;
   }
@@ -3622,6 +3631,24 @@
       const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
       row?.scrollIntoView({ block: 'center' });
       row?.querySelector('input[name="place"]')?.focus();
+      return;
+    }
+
+    // 달력 내역을 눌러 입력 화면의 해당 항목으로 바로 이동
+    const editTx = t.closest('[data-edit-tx]');
+    if (editTx) {
+      const [type, id] = editTx.dataset.editTx.split(':');
+      const rowKind = type === 'income' ? 'bonus' : 'transaction';
+      app.tab = 'monthly';
+      render();
+      window.scrollTo({ top: 0 });
+      const row = document.querySelector(`form[data-row="${rowKind}"][data-id="${id}"]`);
+      if (row) {
+        row.classList.add('just-added');
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.querySelector('input[name="amount"]')?.focus();
+        row.querySelector('input[name="amount"]')?.select();
+      }
       return;
     }
 
