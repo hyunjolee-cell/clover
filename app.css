@@ -290,18 +290,33 @@ select {
 .page > *, .grid > *, .card-head > * { min-width: 0; }
 
 .page-head {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: nowrap;
 }
+.page-head h2 { font-size: 20px; white-space: nowrap; }
 .eyebrow {
   display: block;
-  font-size: 12.5px; font-weight: 600; letter-spacing: 0;
-  color: var(--g500); margin-bottom: 2px; text-transform: none;
+  font-size: 12px; font-weight: 600; letter-spacing: 0;
+  color: var(--g500); margin-bottom: 1px; text-transform: none;
 }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.month-nav { display: flex; align-items: center; gap: 8px; }
-.month-nav input { min-width: 148px; min-height: 40px; padding: 8px 12px; font-size: 14px; }
+/* 월 이동 — 작고 한 덩어리로 */
+.month-nav {
+  display: inline-flex; align-items: center; gap: 0; flex-shrink: 0;
+  background: var(--g100); border-radius: 10px; overflow: hidden;
+}
+.month-nav .icon-btn {
+  min-height: 34px; width: 30px; background: none; border-radius: 0;
+  font-size: 17px; color: var(--g600);
+}
+.month-nav .icon-btn:hover { background: var(--g200); }
+.month-nav input {
+  min-width: 118px; min-height: 34px; padding: 4px 6px;
+  font-size: 13px; font-weight: 600; text-align: center;
+  background: none; border-radius: 0;
+}
+.month-nav input:focus { box-shadow: none; background: var(--surface); }
 
 .grid { display: grid; gap: 12px; }
 .grid.two { grid-template-columns: 1fr; }

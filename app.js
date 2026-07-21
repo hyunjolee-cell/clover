@@ -1400,12 +1400,6 @@
             <small>${won(sharedUsed)} 썼습니다 · 예산의 ${sharedRate}%</small>
             <button class="today-add" type="button" data-quick-add>＋ 지출 기록</button>
           </div>
-          <div class="today-people">
-            <button type="button" data-goto="budgets:현조">
-              <span>현조 생활비</span><b>${won(budgetByOwner(app.month, '현조'))}</b></button>
-            <button type="button" data-goto="budgets:신영">
-              <span>신영 생활비</span><b>${won(budgetByOwner(app.month, '신영'))}</b></button>
-          </div>
         </article>
 
         <div class="hero">
