@@ -3390,7 +3390,10 @@
 
     const tab = t.closest('[data-tab]');
     if (tab) {
+      const prev = app.tab;
       app.tab = tab.dataset.tab;
+      app.homeOpen = null;                 // 홈을 떠나면 홈 펼침 상태를 비운다
+      if (SUB_TABS.includes(app.tab) && !SUB_TABS.includes(prev)) armBackGuard();
       render();
       if (app.tab === 'logs') loadLogs().catch(err => toast(err.message));
       return;
@@ -3426,6 +3429,8 @@
         else if (tab === 'calendar') app.selectedDate = arg;
       }
       app.openRow = null;
+      app.homeOpen = null;
+      if (SUB_TABS.includes(tab) && !SUB_TABS.includes(from)) armBackGuard();
       render();
       window.scrollTo({ top: 0 });
       return;
@@ -3952,9 +3957,10 @@
   function goBackOneDepth() {
     if (app.screen !== 'app') return false;
     if (app.openRow) { app.openRow = null; render(); return true; }
-    if (app.homeOpen) { app.homeOpen = null; render(); return true; }
-    if (SUB_TABS.includes(app.tab)) { app.tab = 'more'; render(); return true; }
-    if (app.tab !== 'home') { app.tab = 'home'; render(); return true; }
+    // 홈 펼침은 홈에 있을 때만 뒤로가기로 닫는다
+    if (app.tab === 'home' && app.homeOpen) { app.homeOpen = null; render(); return true; }
+    if (SUB_TABS.includes(app.tab)) { app.tab = 'more'; app.homeOpen = null; render(); return true; }
+    if (app.tab !== 'home') { app.tab = 'home'; app.homeOpen = null; render(); return true; }
     return false;
   }
   function armBackGuard() {
