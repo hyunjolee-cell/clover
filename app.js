@@ -1841,13 +1841,14 @@
     const grew = last - first;
 
     return `
-      <article class="card">
+      <article class="card trend-card">
         <div class="card-head">
           <div>
             <h3>순자산 추이</h3>
             <small>최근 12개월 · ${grew >= 0 ? '늘어난' : '줄어든'} 금액
               <b class="${grew >= 0 ? 'plus' : 'minus'}">${won(Math.abs(grew))}</b></small>
           </div>
+          <b class="trend-cur">${won(last)}</b>
         </div>
         <div class="trend">
           ${series.map(p => {
@@ -1855,15 +1856,14 @@
             const isNow = p.month === app.month;
             return `
               <button type="button" class="trend-col ${isNow ? 'now' : ''}"
-                      data-goto="assets" title="${monthLabel(p.month)} ${won(p.net)}">
-                <span class="trend-val">${p.net ? shortWon(p.net) : ''}</span>
-                <span class="trend-bar ${p.net < 0 ? 'neg' : ''}" style="height:${h}%"></span>
-                <span class="trend-label">${Number(p.month.slice(5))}월</span>
+                      title="${monthLabel(p.month)} ${won(p.net)}">
+                <span class="trend-bars"><span class="trend-bar ${p.net < 0 ? 'neg' : ''}"
+                  style="height:${h}%"></span></span>
+                <span class="trend-label">${Number(p.month.slice(5))}</span>
               </button>`;
           }).join('')}
         </div>
-        <p class="note">달마다 잔액을 기록해 두면 막대가 채워집니다.
-          큰 지출을 남기면 그달에 반영됩니다.</p>
+        <p class="note">막대를 누르면 해당 월 순자산이 나옵니다. 달마다 잔액을 남기면 추이가 채워집니다.</p>
       </article>`;
   }
 
