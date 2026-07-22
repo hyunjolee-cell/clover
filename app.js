@@ -512,6 +512,7 @@
     openRow: null,         // 펼쳐서 편집 중인 행 'kind:id'
     homeOpen: null,        // 홈에서 펼친 섹션 (flow / sv:flex / sv:long)
     chartBig: false,       // 홈 그래프 전체보기
+    navStack: [],          // 뒤로가기용 화면 스냅샷 스택 (왔던 자리 복원)
     passwordReturn: '',    // 비밀번호 변경 후 돌아갈 화면
     pendingToast: '',      // render 후 표시할 토스트
     sync: '준비 중',
@@ -1427,11 +1428,11 @@
         </article>
 
         <div class="hero">
-          <button class="hero-item" type="button" data-home-open="flow">
+          <div class="hero-item">
             <small>이번 달 남는 금액</small>
             <strong class="${s.remaining < 0 ? 'minus' : ''}">${won(s.remaining)}</strong>
-            <small>총수입 − 적금·저축 − 총지출 · 자세히</small>
-          </button>
+            <small>총수입 − 적금·저축 − 총지출</small>
+          </div>
           <button class="hero-item" type="button" data-goto="assets">
             <small>현재 순자산</small>
             <strong>${won(netAssets())}</strong>
@@ -3570,11 +3571,17 @@
 
     const tab = t.closest('[data-tab]');
     if (tab) {
+      const next = tab.dataset.tab;
       const prev = app.tab;
-      app.tab = tab.dataset.tab;
-      app.homeOpen = null;                 // 홈을 떠나면 홈 펼침 상태를 비운다
-      if (SUB_TABS.includes(app.tab) && !SUB_TABS.includes(prev)) armBackGuard();
+      // 더보기 메뉴에서 서브 화면으로: 스택에 쌓아 뒤로가기 때 더보기로 복귀
+      // 하단 주탭 직접 이동: 새 맥락이므로 스택을 비운다
+      if (SUB_TABS.includes(next) && !SUB_TABS.includes(prev)) pushNav();
+      else resetNav();
+      app.tab = next;
+      app.openRow = null;
+      app.homeOpen = null;
       render();
+      window.scrollTo({ top: 0 });
       if (app.tab === 'logs') loadLogs().catch(err => toast(err.message));
       return;
     }
@@ -3612,6 +3619,7 @@
       const date = app.selectedDate && monthOf(app.selectedDate) === app.month
         ? app.selectedDate
         : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
+      if (app.tab !== 'monthly') pushNav();   // 다른 화면에서 왔으면 그 자리로 돌아가게
       app.tab = 'monthly';
       app.openRow = `transaction:${id}`;
       await mutate(
@@ -3637,7 +3645,8 @@
     const goto = t.closest('[data-goto]');
     if (goto) {
       const [tab, arg] = goto.dataset.goto.split(':');
-      const from = app.tab;
+      // 상세로 들어가기 전에 지금 화면(스크롤 포함)을 스택에 쌓는다 → 뒤로가기 때 이 자리로
+      pushNav();
       app.tab = tab;
       // 화면마다 두 번째 값의 뜻이 다르다. 설정은 항목 종류, 예산은 보기 대상.
       if (arg) {
@@ -3647,7 +3656,6 @@
       }
       app.openRow = null;
       app.homeOpen = null;
-      if (SUB_TABS.includes(tab) && !SUB_TABS.includes(from)) armBackGuard();
       render();
       window.scrollTo({ top: 0 });
       return;
@@ -3728,6 +3736,7 @@
     if (editTx) {
       const [type, id] = editTx.dataset.editTx.split(':');
       const rowKind = type === 'income' ? 'bonus' : 'transaction';
+      if (app.tab !== 'monthly') pushNav();   // 달력 등에서 왔으면 그 자리로 복귀
       app.tab = 'monthly';
       if (rowKind === 'transaction') app.openRow = `transaction:${id}`;   // 접힌 내역을 펼친다
       render();
@@ -4198,26 +4207,61 @@
 
   /* --- 21. 부팅 ----------------------------------------------------------- */
 
-  /* 브라우저 뒤로가기를 앱 내부 뎁스로 처리한다.
-     한 번 뒤로 = 펼친 행 닫기 → 서브 화면이면 더보기로 → 홈으로.
-     홈에서 한 번 더 뒤로 눌러야 앱을 나간다. */
+  /* 뒤로가기 = 왔던 화면의 그 자리(스크롤 포함)로 복원.
+     상세로 들어갈 때 직전 화면 스냅샷을 스택에 쌓고, 뒤로가기 때 그대로 되돌린다. */
   const SUB_TABS = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes'];
-  function goBackOneDepth() {
-    if (app.screen !== 'app') return false;
-    if (app.openRow) { app.openRow = null; render(); return true; }
-    // 홈 펼침은 홈에 있을 때만 뒤로가기로 닫는다
-    if (app.tab === 'home' && app.homeOpen) { app.homeOpen = null; render(); return true; }
-    if (SUB_TABS.includes(app.tab)) { app.tab = 'more'; app.homeOpen = null; render(); return true; }
-    if (app.tab !== 'home') { app.tab = 'home'; app.homeOpen = null; render(); return true; }
-    return false;
+
+  function snapshot() {
+    return {
+      tab: app.tab, settingsGroup: app.settingsGroup, budgetView: app.budgetView,
+      selectedDate: app.selectedDate, month: app.month,
+      homeOpen: app.homeOpen, openRow: app.openRow,
+      chartBig: app.chartBig,
+      scroll: window.scrollY || document.documentElement.scrollTop || 0
+    };
+  }
+  function restoreSnapshot(s) {
+    Object.assign(app, {
+      tab: s.tab, settingsGroup: s.settingsGroup, budgetView: s.budgetView,
+      selectedDate: s.selectedDate, month: s.month,
+      homeOpen: s.homeOpen, openRow: s.openRow, chartBig: s.chartBig
+    });
+    render();
+    // 렌더가 끝난 뒤 저장해 둔 스크롤 위치로 되돌린다
+    requestAnimationFrame(() => {
+      window.scrollTo(0, s.scroll || 0);
+      requestAnimationFrame(() => window.scrollTo(0, s.scroll || 0));
+    });
+  }
+
+  /* 상세 진입 직전에 부른다. 현재 화면을 스택에 쌓고 히스토리에 한 칸 만든다. */
+  function pushNav() {
+    app.navStack.push(snapshot());
+    try { history.pushState({ clover: true }, ''); } catch {}
+  }
+  /* 하단 주탭을 직접 눌러 화면 맥락을 바꿀 때는 스택을 비운다. */
+  function resetNav() {
+    app.navStack = [];
+    try { history.pushState({ clover: true }, ''); } catch {}
   }
   function armBackGuard() {
-    // 앱 화면에 들어올 때 히스토리에 한 칸 쌓아 첫 뒤로가기를 잡는다
     try { history.pushState({ clover: true }, ''); } catch {}
+  }
+
+  function goBackOneDepth() {
+    if (app.screen !== 'app') return false;
+    // 펼친 편집 행이 있으면 먼저 닫는다 (같은 화면 안)
+    if (app.openRow) { app.openRow = null; render(); return true; }
+    // 스택에 왔던 화면이 있으면 그 자리로 복원
+    const snap = app.navStack.pop();
+    if (snap) { restoreSnapshot(snap); return true; }
+    // 스택이 비었으면 홈으로, 홈이면 앱을 나간다
+    if (app.homeOpen) { app.homeOpen = null; render(); return true; }
+    if (app.tab !== 'home') { app.tab = 'home'; render(); return true; }
+    return false;
   }
   window.addEventListener('popstate', () => {
     if (goBackOneDepth()) {
-      // 아직 앱 안이면 다시 한 칸 쌓아 브라우저가 나가지 않게 한다
       try { history.pushState({ clover: true }, ''); } catch {}
     }
   });

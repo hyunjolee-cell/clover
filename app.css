@@ -1551,8 +1551,13 @@ button.day-item b .ico { color: var(--g300); vertical-align: middle; }
 textarea { resize: vertical; min-height: 70px; line-height: 1.6; }
 
 /* 오늘 카드 전체를 눌러 공동생활비 입력으로 */
-.today-card.clickable { cursor: pointer; }
+.today-card.clickable { cursor: pointer; position: relative; }
 .today-card.clickable:active { transform: scale(.99); }
+/* 상세로 이어지는 표시 — 우측 상단 화살표 */
+.today-card.clickable .today-top::after {
+  content: '›'; margin-left: 8px;
+  color: rgba(255, 255, 255, .7); font-size: 18px; font-weight: 700;
+}
 
 /* 그래프 데이터 라벨을 버튼으로 — 눌러서 해당 항목 상세로 */
 button.ch-lbl {
