@@ -283,8 +283,8 @@ select {
 /* --- 페이지 레이아웃 ----------------------------------------------------- */
 
 .page {
-  display: grid; gap: 20px;
-  padding: 24px var(--pad-x) 28px;
+  display: grid; gap: 12px;                /* 여백 축소 — 스크롤 최소화 */
+  padding: 16px var(--pad-x) 20px;
   max-width: 1080px; margin: 0 auto;
   min-width: 0;               /* grid 자식이 내용 폭만큼 늘어나 옆으로 밀리는 것 방지 */
 }
@@ -335,12 +335,12 @@ select {
   border: none;
   border-radius: var(--r-card);
   box-shadow: var(--sh-card);
-  padding: 20px;
+  padding: 15px 16px;                       /* 여백 축소 */
 }
 .card-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .card-head small { display: block; margin-top: 2px; }
 .note { color: var(--g500); font-size: 13px; }
@@ -349,11 +349,11 @@ select {
 /* --- 홈 ----------------------------------------------------------------- */
 
 .hero {
-  display: grid; gap: 20px;
+  display: grid; gap: 14px;
   background: var(--surface);
   border-radius: var(--r-card);
   box-shadow: var(--sh-card);
-  padding: 24px 20px;
+  padding: 16px;
 }
 .hero-item small { display: block; color: var(--g500); font-size: 13px; }
 .hero-item strong {
@@ -1223,7 +1223,7 @@ button.hero-item:active { transform: none; }
 .today-card {
   background: linear-gradient(135deg, #3B6FE0, #2F58B8);
   color: #fff; border-radius: var(--r-card);
-  padding: 20px; display: grid; gap: 12px;
+  padding: 16px; display: grid; gap: 10px;
   box-shadow: 0 4px 16px rgba(59, 111, 224, .22);
 }
 .today-card.over { background: linear-gradient(135deg, #D26464, #B84A4A); }
