@@ -50,7 +50,7 @@
              '부모님적금', '조카적금', '옷적금', '경조사', '기타 적금'],
     budget: ['용돈', '점심', '교통비', '미용실', '미용', '화장품', '병원',
              '외식 및 생필품', '기타 생활비'],
-    asset: ['입출금 계좌', '정기예금', '적금 누적액', '주식', 'ETF', 'ISA', '연금',
+    asset: ['입출금 계좌', '정기예금', '주식', 'ETF', 'ISA', '연금',
             '금', '전세보증금', '자동차', '부동산', '기타 자산',
             '— 부채 —', '신용대출', '주택담보대출', '전세자금대출', '카드 미결제금',
             '학자금대출', '기타 부채'],
@@ -414,6 +414,8 @@
       if (!OWNERS.includes(x.owner)) x.owner = '공동';
       x.asOf ||= ymd(today());
       x.memo ||= '';
+      x.monthlyAdd = num(x.monthlyAdd);                   // 매월 자동으로 더해지는 금액(단순 누적)
+      x.addFrom = String(x.addFrom || monthOf(x.asOf) || currentMonth).slice(0, 7);
       if (!Array.isArray(x.history) || !x.history.length) {
         x.history = [{ from: monthOf(x.asOf) || currentMonth, amount: num(x.amount) }];
       }
@@ -580,7 +582,28 @@
       .reduce((s, b) => s + historyValue(b.history, month), 0);
 
   /* 자산·부채는 월별 이력을 갖는다. 기본은 지금 보고 있는 달 기준이다. */
-  const assetAt = (a, month = app.month) => historyValue(a.history, month);
+  /* 자산 잔액에 목돈 지출 영향을 파생으로 얹는다.
+     자산 history는 사용자가 적은 값만 두고, 집·차 지출은 계산 시 반영한다.
+     이렇게 하면 목돈 지출을 수정·삭제하면 자동으로 정확히 되돌려진다. */
+  function bigSpendEffect(assetId, month) {
+    let e = 0;
+    for (const bs of app.state.bigSpends) {
+      if (String(bs.month) > String(month)) continue;   // 아직 오지 않은 지출은 제외
+      if (bs.fromId === assetId) e -= num(bs.amount);                        // 빠진 자산
+      if (bs.toId === assetId) e += num(bs.amount) + num(bs.debtAmount);      // 새로 생긴 자산
+      if (bs.debtId === assetId) e += num(bs.debtAmount);                     // 함께 받은 대출
+    }
+    return e;
+  }
+  const assetAt = (a, month = app.month) => {
+    // 매월 자동 증가액을 시작월부터 그달까지 단순 누적(복리 아님)
+    let add = 0;
+    const add1 = num(a.monthlyAdd);
+    if (add1 && a.addFrom && String(month) >= String(a.addFrom)) {
+      add = add1 * (monthsBetween(a.addFrom, month) + 1);
+    }
+    return historyValue(a.history, month) + add + bigSpendEffect(a.id, month);
+  };
   /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다 */
   function savingBalance(sv, month = app.month) {
     let sum = num(sv.startBalance);
@@ -639,11 +662,15 @@
     const utility = utilityTotal(month);
     const personal = personalBudget(month);
     const spend = sharedSpend(month);
-    const expense = fixed + utility + personal + spend;
+    const coreExpense = fixed + utility + personal + spend;
+    // 쓰고 저축하고 남는 돈은 쌓이는 돈이 아니라 결국 나가는 돈이므로 지출로 잡는다
+    const residual = Math.max(0, income - saving - coreExpense);
+    const expense = coreExpense + residual;
     return {
-      base, bonus, income, saving, fixed, utility, personal, spend, expense,
+      base, bonus, income, saving, fixed, utility, personal, spend,
+      coreExpense, residual, expense,
       sharedBudget: sharedBudget(month),
-      remaining: income - saving - expense,
+      remaining: income - saving - expense,   // 잔여를 지출로 편입하므로 0 또는 적자
       savingRate: income > 0 ? (saving / income) * 100 : 0
     };
   }
@@ -1481,7 +1508,9 @@
           ['공과금', -s.utility, '자동', 'settings:utility'],
           ['현조 용돈', -budgetByOwner(app.month, '현조'), '자동', 'budgets:현조'],
           ['신영 용돈', -budgetByOwner(app.month, '신영'), '자동', 'budgets:신영'],
-          ['공동 생활비', -s.spend, '입력분', 'monthly']
+          ['공동 생활비', -s.spend, '입력분', 'monthly'],
+          // 저축하고도 남는 돈은 쌓이지 않고 나가는 돈이므로 잔여 지출로 잡는다
+          ...(s.residual > 0 ? [['잔여(미분류)', -s.residual, '자동', 'monthly']] : [])
         ] }
     ];
 
@@ -1825,6 +1854,11 @@
             <input name="from" type="month" value="${esc(applied)}"></label>
           <label class="field"><span>그 달 잔액</span>
             <input name="amount" inputmode="numeric" value="${value}"></label>
+          <label class="field"><span>매월 자동 증가액</span>
+            <input name="monthlyAdd" inputmode="numeric" value="${num(x.monthlyAdd)}"
+                   placeholder="예: 월급 저축분 (없으면 0)"></label>
+          <label class="field"><span>증가 시작월</span>
+            <input name="addFrom" type="month" value="${esc(x.addFrom || applied)}"></label>
           <label class="field wide"><span>메모</span>
             <input name="memo" value="${esc(x.memo)}"></label>
           <div class="item-actions">
@@ -1849,29 +1883,6 @@
   /* 목돈 지출을 자산 잔액에 반영한다.
      빠지는 자산은 줄고, 남는 자산과 대출은 늘어난다.
      그 달의 직전 잔액을 기준으로 계산해 두 번 눌러도 값이 어긋나지 않게 한다. */
-  function applyBigSpend(state, spend) {
-    const month = spend.month;
-    const prev = shiftMonth(month, -1);
-    const find = id => state.assets.find(a => a.id === id);
-
-    const from = find(spend.fromId);
-    if (from) {
-      const base = historyValue(from.history, prev);
-      setHistory(from.history, month, base - num(spend.amount));
-    }
-    const to = find(spend.toId);
-    if (to) {
-      const base = historyValue(to.history, prev);
-      // 대출을 함께 받았다면 산 물건의 값은 낸 돈 + 대출금이다
-      setHistory(to.history, month, base + num(spend.amount) + num(spend.debtAmount));
-    }
-    const debt = find(spend.debtId);
-    if (debt && num(spend.debtAmount)) {
-      const base = historyValue(debt.history, prev);
-      setHistory(debt.history, month, base + num(spend.debtAmount));
-    }
-  }
-
   /* 순자산 추이 — 최근 12개월을 막대로 */
   function netTrend() {
     // 그 해 1~12월 순으로 본다
@@ -3306,6 +3317,8 @@
           x.category = String(d.get('category') || '기타').trim();
           x.owner = d.get('owner') || x.owner;
           x.memo = String(d.get('memo') || '').trim();
+          x.monthlyAdd = num(d.get('monthlyAdd'));
+          if (d.get('addFrom')) x.addFrom = String(d.get('addFrom')).slice(0, 7);
           const at = String(d.get('from') || app.month).slice(0, 7);
           setHistory(x.history, at, d.get('amount'));
           x.asOf = `${at}-01`;
@@ -3319,7 +3332,9 @@
           x.debtId = d.get('debtId') || '';
           x.debtAmount = num(d.get('debtAmount'));
           x.memo = String(d.get('memo') || '').trim();
-          applyBigSpend(state, x);
+          // 자산 반영은 assetAt()의 파생 계산이 맡는다 (수정·삭제 시 자동 정정)
+          // 같은 자산을 출금·귀속으로 동시에 고르면 계산이 꼬이므로 막는다
+          if (x.fromId && x.fromId === x.toId) x.toId = '';
 
         } else if (kind === 'bonus') {
           x.name = name;
@@ -3580,6 +3595,12 @@
     if (tab) {
       const next = tab.dataset.tab;
       const prev = app.tab;
+      // 빈 항목(값 없이 만든 것)을 남겨둔 채 탭을 옮기면 자동으로 지운다
+      if (app.draft && !draftDirty()) { await discardDraft(); }
+      else if (app.draft && draftDirty()) {
+        if (!confirm('작성 중이던 내용이 저장되지 않고 삭제됩니다. 이동할까요?')) return;
+        await discardDraft();
+      }
       // 더보기 메뉴에서 서브 화면으로: 스택에 쌓아 뒤로가기 때 더보기로 복귀
       // 하단 주탭 직접 이동: 새 맥락이므로 스택을 비운다
       if (SUB_TABS.includes(next) && !SUB_TABS.includes(prev)) pushNav();
