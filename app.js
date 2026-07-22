@@ -182,6 +182,7 @@
       flows: [],             // 통장 사이 이체 규칙 — 흐름도의 화살표
       bigSpends: [],         // 집·차 같은 목돈 지출 — 어느 자산에서 나가 무엇으로 남았는지
       notes: [],             // 특이사항 메모 — 저장하면 계속 누적
+      recurrings: [],        // 반복 지출 — 매달 자동으로 생활비 내역이 만들어진다
       defaults: null,        // 사용자가 저장해 둔 기본값 (없으면 가계부 25.10 원본을 쓴다)
       monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
     };
@@ -332,7 +333,7 @@
 
     for (const key of ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'assets',
                        'budgets', 'bonuses', 'transactions', 'scenarios', 'goals',
-                       'accounts', 'cards', 'flows', 'bigSpends', 'notes']) {
+                       'accounts', 'cards', 'flows', 'bigSpends', 'notes', 'recurrings']) {
       if (!Array.isArray(s[key])) s[key] = [];
     }
     for (const n of s.notes) {
@@ -340,6 +341,15 @@
       n.text = String(n.text || '');
       n.at ||= '';
       n.actor ||= '';
+    }
+    for (const r of s.recurrings) {
+      r.id ||= uid();
+      r.name ||= '반복 지출';
+      r.category ||= '공동생활비';
+      if (!OWNERS.includes(r.owner)) r.owner = '공동';
+      r.amount = num(r.amount);
+      r.day = Math.min(28, Math.max(1, num(r.day) || 1));
+      if (!Array.isArray(r.applied)) r.applied = [];   // 이미 반영한 달 목록(중복 방지)
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
     if (s.defaults !== null && typeof s.defaults !== 'object') s.defaults = null;
@@ -524,7 +534,11 @@
     logFilter: { actor: '', action: '', entityType: '' },
     busy: false,
     online: navigator.onLine,
-    pending: [],           // 네트워크 실패로 아직 서버에 못 올린 변경
+    pending: [],           // 네트워크 실패로 아직 서버에 못 올린 변경(같은 세션 재전송용)
+    pendingDirty: false,   // 오프라인 변경이 서버에 미반영 상태인지 (새로고침해도 유지)
+    pendingBase: null,     // 오프라인 편집이 갈라져 나온 서버 버전 (충돌 판정 기준)
+    remoteEditor: null,    // 상대가 편집 중이면 { actor, label, at } — 동시편집 소프트잠금
+    lastPresence: '',      // 마지막으로 방송한 내 편집 상태 (중복 방송 방지)
     undoStack: [],         // 되돌리기용 직전 상태 (최근 20건)
     expanded: new Set(),   // 로그 전후값 펼침
     channel: null,
@@ -743,7 +757,10 @@
     try {
       localStorage.setItem(
         `${CACHE_PREFIX}${app.space.code}`,
-        JSON.stringify({ state: app.state, version: app.version })
+        JSON.stringify({
+          state: app.state, version: app.version,
+          dirty: app.pendingDirty, base: app.pendingBase
+        })
       );
     } catch { /* 저장공간 부족은 무시 — 서버가 원본이다 */ }
   }
@@ -754,6 +771,9 @@
       if (raw?.state) {
         app.state = migrate(raw.state);
         app.version = num(raw.version);
+        // 오프라인 중 껐다 켜도 미저장 변경을 기억한다
+        app.pendingDirty = !!raw.dirty;
+        app.pendingBase = raw.base ?? null;
         return true;
       }
     } catch { /* 손상 캐시는 무시 */ }
@@ -865,6 +885,8 @@
       }
 
       app.version = num(row.version);
+      // 서버에 안착했으니 미저장 표시를 지운다(대기열이 비었을 때만)
+      if (!app.pending.length) { app.pendingDirty = false; app.pendingBase = null; }
       cacheState();
 
       /* 되돌리기용으로 직전 상태를 쌓아 둔다.
@@ -891,6 +913,9 @@
       if (isNetworkError(e)) {
         // 네트워크 장애: 화면의 변경은 유지하고 캐시에 남긴 뒤 복구 시 재전송한다
         app.pending.push({ mutator, meta });
+        // 새로고침해도 살아남도록 "미저장" 표시를 캐시에 남긴다.
+        // 처음 끊긴 순간의 서버 버전(snapVersion)을 기준으로 잡아 충돌 판정에 쓴다.
+        if (!app.pendingDirty) { app.pendingDirty = true; app.pendingBase = snapVersion; }
         cacheState();
         setSync(`오프라인 — 미저장 ${app.pending.length}건`, 'warn');
         toast('네트워크가 끊겼습니다. 연결되면 자동으로 다시 저장합니다.');
@@ -956,6 +981,53 @@
     }
   }
 
+  /* 새로고침/앱 재시작으로 대기열(closure)이 사라진 뒤의 복구 경로.
+     캐시에 남은 로컬 상태를 통째로 서버에 올린다. 갈라져 나온 버전(pendingBase)을
+     기대 버전으로 보내므로, 오프라인 사이 상대가 저장했으면 서버가 충돌로 막는다. */
+  async function resyncDirtyState() {
+    if (!app.pendingDirty || !db || !app.space) return false;
+    setSync('오프라인 변경 재동기화 중', 'busy');
+    render();
+    const local = clone(app.state);
+    try {
+      const { data, error } = await db.rpc('clv_write_space', {
+        p_space_code: app.space.code,
+        p_expected_version: app.pendingBase ?? app.version,
+        p_state: local,
+        p_actor: app.space.actor,
+        p_device_id: app.device.id,
+        p_action: 'update',
+        p_entity_type: 'settings',
+        p_entity_id: null,
+        p_summary: '오프라인 변경 자동 반영',
+        p_before_data: null,
+        p_after_data: null
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row?.conflict) {
+        // 오프라인 사이 상대가 먼저 저장 → 자동 병합 불가. 서버 우선, 사용자에게 고지.
+        app.state = migrate(row.state);
+        app.version = num(row.version);
+        app.pendingDirty = false; app.pendingBase = null;
+        cacheState();
+        setSync('충돌 — 상대 변경 우선 적용됨', 'warn');
+        toast('오프라인 동안 상대가 같은 공간을 수정해, 이번 기기의 오프라인 변경은 반영하지 않았습니다.');
+        return false;
+      }
+      app.state = migrate(row.state);
+      app.version = num(row.version);
+      app.pendingDirty = false; app.pendingBase = null;
+      cacheState();
+      setSync('오프라인 변경 반영 완료', 'ok');
+      toast('오프라인 동안의 변경을 서버에 반영했습니다.');
+      return true;
+    } catch (e) {
+      if (isNetworkError(e)) { setSync('오프라인 — 저장된 내용 표시 중', 'warn'); return false; }
+      throw e;
+    }
+  }
+
   /* --- 6. 실시간 동기화 --------------------------------------------------- */
 
   function startRealtime() {
@@ -963,7 +1035,29 @@
     if (!db || !app.space) return;
 
     app.channel = db
-      .channel(`clover-${app.space.code}`)
+      .channel(`clover-${app.space.code}`,
+        { config: { presence: { key: `${app.space.actor}:${app.device.id}` } } })
+      // 동시 편집 감지: 상대가 어떤 항목을 편집 중인지 presence 로 공유한다(구글 시트식)
+      .on('presence', { event: 'sync' }, () => {
+        let editor = null;
+        try {
+          const st = app.channel.presenceState();
+          const nowMs = Date.now();
+          for (const key of Object.keys(st)) {
+            for (const pres of st[key]) {
+              if (!pres || pres.actor === app.space.actor || !pres.editing) continue;
+              // 90초 넘게 갱신 없는 편집 표시는 죽은 것으로 보고 무시(잠금 영구화 방지)
+              const at = pres.at ? Date.parse(pres.at) : nowMs;
+              if (nowMs - at > 90000) continue;
+              editor = { actor: pres.actor, label: pres.editing, at: pres.at };
+            }
+          }
+        } catch { /* presence 미지원 시 잠금 없이 동작 */ }
+        const before = `${app.remoteEditor?.actor || ''}|${app.remoteEditor?.label || ''}`;
+        const after = `${editor?.actor || ''}|${editor?.label || ''}`;
+        app.remoteEditor = editor;
+        if (before !== after) requestRender();
+      })
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'clv_spaces',
           filter: `space_code=eq.${app.space.code}` },
@@ -978,8 +1072,8 @@
           requestRender();
           if (app.tab === 'logs') loadLogs().catch(() => {});
         })
-      .subscribe(status => {
-        if (status === 'SUBSCRIBED') setSync('실시간 연결됨', 'ok');
+      .subscribe(async status => {
+        if (status === 'SUBSCRIBED') { setSync('실시간 연결됨', 'ok'); await trackPresence(); }
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setSync('실시간 끊김 — 주기 확인으로 전환', 'warn');
         }
@@ -1003,11 +1097,38 @@
     app.pollTimer = null;
   }
 
-  window.addEventListener('online', () => {
+  /* 내가 지금 무엇을 편집 중인지 상대에게 알린다. 편집을 닫으면 editing=null 로 잠금 해제. */
+  async function trackPresence() {
+    if (!app.channel) return;
+    const kind = app.openRow ? String(app.openRow).split(':')[0] : '';
+    const editing = kind ? (ENTITY_LABEL[kind] || '항목') : null;
+    try {
+      await app.channel.track({
+        actor: app.space?.actor, device: app.device.id,
+        editing, at: new Date().toISOString()
+      });
+    } catch { /* presence 미지원 환경은 잠금 없이 진행 */ }
+  }
+
+  /* 편집 상태가 바뀌었을 때만 presence 를 다시 방송한다(render 마다 호출해도 안전). */
+  function syncPresence() {
+    const kind = app.openRow ? String(app.openRow).split(':')[0] : '';
+    const sig = kind || '';
+    if (sig === app.lastPresence) return;
+    app.lastPresence = sig;
+    trackPresence().catch(() => {});
+  }
+
+  window.addEventListener('online', async () => {
     app.online = true;
     setSync('연결 복구 — 재동기화', 'busy');
     render();
-    flushPending().catch(() => {});
+    try {
+      // 같은 세션 대기열이 있으면 그걸로, 없고 미저장만 남았으면 로컬 상태를 통째로 올린다
+      if (app.pending.length) await flushPending();
+      else if (app.pendingDirty) await resyncDirtyState();
+      render();
+    } catch { /* 재시도는 다음 online/폴링에서 */ }
   });
   window.addEventListener('offline', () => {
     app.online = false;
@@ -1024,7 +1145,7 @@
     scenario: '포캐스팅 시나리오', goal: '자산 목표', settings: '설정',
     space: '공유공간', device: '기기',
     account: '통장', card: '연동 카드', flow: '자동이체', bigSpend: '목돈 지출',
-    note: '특이사항 메모'
+    note: '특이사항 메모', recurring: '반복 지출'
   };
   const ACTION_LABEL = {
     create: '추가', update: '수정', delete: '삭제', connect: '접속', system: '시스템'
@@ -1046,7 +1167,7 @@
     bonus: state.bonuses, transaction: state.transactions,
     scenario: state.scenarios, goal: state.goals,
     account: state.accounts, card: state.cards, flow: state.flows,
-    bigSpend: state.bigSpends
+    bigSpend: state.bigSpends, recurring: state.recurrings
   }[kind] || null);
 
   const findEntity = (kind, id, state = app.state) =>
@@ -1138,7 +1259,8 @@
     undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4',
     book: 'M4 5.5A2 2 0 0 1 6 4h13v14H6a2 2 0 0 0-2 2zM8 8h7M8 11.5h7',
     key: 'M14.5 4a5.5 5.5 0 1 0-4.2 9.3L4 19.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 0 14.5 4z' +
-         'M16 8h.01'
+         'M16 8h.01',
+    lock: 'M6 10.5h12v9H6zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14v2.5'
   };
 
   const icon = (name, size = 22) =>
@@ -1574,6 +1696,37 @@
       </form>`).join('');
   }
 
+  /* 반복 지출 목록. 각 항목은 매달 자동으로 생활비 내역을 만든다. */
+  function recurringRows() {
+    if (!app.state.recurrings.length)
+      return emptyRow('등록된 반복 지출이 없습니다. 매달 나가는 구독료·용돈 등을 넣어보세요.');
+    return app.state.recurrings.map(x => {
+      const applied = (x.applied || []).includes(app.month);
+      return `
+        <form class="item" data-row="recurring" data-id="${x.id}">
+          <label class="field"><span>항목명</span><input name="name" value="${esc(x.name)}"></label>
+          <label class="field"><span>카테고리</span>
+            <select name="category">
+              ${[...new Set([DEFAULT_CATEGORY, ...QUICK_CATEGORIES, x.category])].filter(Boolean).map(c =>
+                `<option ${x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select></label>
+          <label class="field"><span>결제자</span>${ownerSelect('owner', x.owner)}</label>
+          <label class="field"><span>매월 며칠</span>
+            <input name="day" inputmode="numeric" value="${num(x.day)}"></label>
+          <label class="field"><span>금액</span>
+            <input name="amount" inputmode="numeric" value="${num(x.amount)}"></label>
+          <div class="item-actions">
+            <button class="secondary" type="submit">수정 저장</button>
+            <button class="danger" type="button" data-delete="recurring" data-id="${x.id}">삭제</button>
+          </div>
+          <div class="wide">
+            <small class="${applied ? 'plus' : 'note'}">${
+              applied ? `${monthLabel(app.month)}에 이미 반영됨` : `${monthLabel(app.month)}에 아직 미반영`}</small>
+          </div>
+        </form>`;
+    }).join('');
+  }
+
   function transactionRows() {
     const filter = app.txFilter || { owner: '', category: '' };
     let list = transactionsOf(app.month);
@@ -1681,6 +1834,17 @@
             <button class="secondary" type="button" data-add="bonus">추가</button>
           </div>
           <div class="list">${bonusRows()}</div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h3>반복 지출</h3>
+              <small>매달 자동으로 생활비 내역이 만들어집니다</small>
+            </div>
+            <button class="secondary" type="button" data-add="recurring">추가</button>
+          </div>
+          <div class="list">${recurringRows()}</div>
         </article>
 
         <article class="card">
@@ -2865,6 +3029,116 @@
       </section>`;
   }
 
+  /* --- 15-C-3. 화면: 월별 리포트 ------------------------------------------ */
+  /* 이번 달 요약을 한 장으로. 인쇄(PDF 저장)와 이미지(PNG) 내보내기를 제공한다. */
+  function reportView() {
+    const s = summary();
+    const rows = [
+      ['총수입', won(s.income), 'plus'],
+      ['  정기소득', won(s.base), ''],
+      ['  보너스·상여금', won(s.bonus), ''],
+      ['적금·저축', `−${won(s.saving)}`, 'keep'],
+      ['월 고정비', `−${won(s.fixed)}`, 'minus'],
+      ['공과금', `−${won(s.utility)}`, 'minus'],
+      ['개인 생활비', `−${won(s.personal)}`, 'minus'],
+      ['공동 생활비', `−${won(s.spend)}`, 'minus'],
+      ...(s.residual > 0 ? [['잔여(미분류)', `−${won(s.residual)}`, 'minus']] : []),
+      ['남는 금액', won(s.remaining), s.remaining < 0 ? 'minus' : 'plus']
+    ];
+    return `
+      <section class="page report-page">
+        <div class="page-head">
+          <div><span class="eyebrow">월별 리포트</span><h2>${monthLabel(app.month)}</h2></div>
+          ${monthNav()}
+        </div>
+
+        <article class="card" id="reportSheet">
+          <div class="report-head">
+            <b>CLOVER · ${esc(app.space.name || '우리집')}</b>
+            <span>${monthLabel(app.month)} 가계 요약</span>
+          </div>
+          <div class="report-kpis">
+            <div><small>총수입</small><b>${won(s.income)}</b></div>
+            <div><small>총지출</small><b class="minus">${won(s.expense)}</b></div>
+            <div><small>적금·저축</small><b class="keep">${won(s.saving)}</b></div>
+            <div><small>현재 순자산</small><b>${won(netAssets())}</b></div>
+          </div>
+          <div class="report-rows">
+            ${rows.map(([k, v, cls]) =>
+              `<div class="${k.startsWith('  ') ? 'sub' : ''}"><span>${esc(k.trim())}</span>
+                <b class="${cls}">${v}</b></div>`).join('')}
+          </div>
+          <div class="report-foot">저축률 ${s.savingRate.toFixed(1)}% ·
+            생성 ${new Date().toISOString().slice(0, 10)}</div>
+        </article>
+
+        <div class="row" style="gap:8px">
+          <button class="primary" type="button" data-report-print>인쇄 · PDF로 저장</button>
+          <button class="secondary" type="button" data-report-image>이미지로 저장</button>
+        </div>
+      </section>`;
+  }
+
+  /* 리포트를 PNG 이미지로 저장. 요약 값을 canvas에 직접 그린다(외부 라이브러리 없이). */
+  function exportReportImage() {
+    const s = summary();
+    const W = 720, H = 1000, pad = 48;
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    // 헤더 띠 (앱 블루 톤)
+    g.fillStyle = '#2F58B8'; g.fillRect(0, 0, W, 132);
+    g.fillStyle = '#ffffff';
+    g.font = '700 34px "Noto Sans KR", sans-serif';
+    g.fillText('🍀 CLOVER', pad, 60);
+    g.font = '400 20px "Noto Sans KR", sans-serif';
+    g.fillText(`${esc(app.space.name || '우리집')} · ${monthLabel(app.month)} 가계 요약`, pad, 98);
+    // KPI 4칸
+    const kpis = [
+      ['총수입', won(s.income), '#18181B'],
+      ['총지출', won(s.expense), '#9B3838'],
+      ['적금·저축', won(s.saving), '#2F58B8'],
+      ['현재 순자산', won(netAssets()), '#1F6B4D']
+    ];
+    let ky = 200;
+    kpis.forEach((k, i) => {
+      const col = i % 2, rowi = Math.floor(i / 2);
+      const bx = pad + col * ((W - pad * 2) / 2), by = ky + rowi * 96;
+      g.fillStyle = '#64748b'; g.font = '400 16px "Noto Sans KR", sans-serif';
+      g.fillText(k[0], bx, by);
+      g.fillStyle = k[2]; g.font = '700 28px "Noto Sans KR", sans-serif';
+      g.fillText(k[1], bx, by + 34);
+    });
+    // 구분선
+    g.strokeStyle = '#e2e8f0'; g.beginPath(); g.moveTo(pad, 420); g.lineTo(W - pad, 420); g.stroke();
+    // 상세 행
+    const rows = [
+      ['정기소득', won(s.base)], ['보너스·상여금', won(s.bonus)],
+      ['적금·저축', `−${won(s.saving)}`], ['월 고정비', `−${won(s.fixed)}`],
+      ['공과금', `−${won(s.utility)}`], ['개인 생활비', `−${won(s.personal)}`],
+      ['공동 생활비', `−${won(s.spend)}`],
+      ...(s.residual > 0 ? [['잔여(미분류)', `−${won(s.residual)}`]] : []),
+      ['남는 금액', won(s.remaining)]
+    ];
+    let ry = 470;
+    rows.forEach(([k, v]) => {
+      g.fillStyle = '#334155'; g.font = '400 19px "Noto Sans KR", sans-serif';
+      g.fillText(k, pad, ry);
+      g.textAlign = 'right'; g.fillStyle = '#0f172a'; g.font = '600 19px "Noto Sans KR", sans-serif';
+      g.fillText(v, W - pad, ry); g.textAlign = 'left';
+      ry += 46;
+    });
+    // 푸터
+    g.fillStyle = '#94a3b8'; g.font = '400 15px "Noto Sans KR", sans-serif';
+    g.fillText(`저축률 ${s.savingRate.toFixed(1)}% · 생성 ${new Date().toISOString().slice(0, 10)}`, pad, H - 40);
+    // 다운로드
+    const url = cv.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url; a.download = `clover-${app.month}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
   /* --- 15-C-2. 화면: 특이사항 메모 ---------------------------------------- */
   /* 저장하면 계속 쌓이는 메모. 최신이 위로. 변경 로그와 같은 감사 원칙을 따른다. */
   function notesView() {
@@ -2912,6 +3186,7 @@
       ['분석·도구', [
         ['forecast', 'chart', '자산 포캐스팅', '시나리오별 예상 순자산'],
         ['notes', 'edit', '특이사항 메모', '기록해 두면 계속 쌓입니다'],
+        ['report', 'chart', '월별 리포트', 'PDF·이미지로 내보내기'],
         ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨나'],
         ['defaults', 'book', '기본값 관리', '기본값 저장·불러오기'],
         ['guide', 'book', '사용 설명서', '기능을 언제 쓰는지 한 장']
@@ -3066,14 +3341,14 @@
     const views = {
       home: homeView, calendar: calendarView, monthly: monthlyView, assets: assetsView,
       forecast: forecastView, flow: flowView, settings: settingsView, defaults: defaultsView,
-      budgets: budgetsView, notes: notesView,
+      budgets: budgetsView, notes: notesView, report: reportView,
       logs: logsView, more: moreView
     };
     const content = (views[app.tab] || homeView)();
 
     // 더보기 안쪽 화면에서는 돌아갈 곳을 알려준다
-    const sub = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes'].includes(app.tab);
-    const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름', notes: '특이사항 메모',
+    const sub = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes', 'report'].includes(app.tab);
+    const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름', notes: '특이사항 메모', report: '월별 리포트',
                        settings: '항목 설정', logs: '변경 로그', defaults: '기본값 관리', budgets: '생활비 예산' }[app.tab];
 
     return `
@@ -3098,6 +3373,11 @@
         <button id="liveBanner" type="button" data-apply-live>
           상대방이 방금 변경했습니다 · 눌러서 반영
         </button>
+
+        ${app.remoteEditor ? `
+          <div class="edit-lock-banner" role="status">
+            ${icon('lock', 15)} ${esc(app.remoteEditor.actor)}님이 "${esc(app.remoteEditor.label)}"을(를) 수정 중입니다
+          </div>` : ''}
 
         ${content}
 
@@ -3137,6 +3417,8 @@
     }
     // 셸을 다시 그린 뒤 대기 중인 토스트가 있으면 이어서 표시한다
     if (app.pendingToast) showToast();
+    // 내 편집 상태가 바뀌었으면 상대에게 알린다(동시편집 잠금)
+    if (app.screen === 'app') syncPresence();
   }
 
   /* --- 18. 변경 동작 ------------------------------------------------------ */
@@ -3177,9 +3459,42 @@
       goal: { id, name: '새 목표', target: 0, dueDate: '', scenarioId: '', memo: '' },
       bigSpend: { id, name: '새 목돈 지출', month: app.month, amount: 0,
                   fromId: app.state.assets.find(a => a.kind === 'asset')?.id || '',
-                  toId: '', debtId: '', debtAmount: 0, memo: '' }
+                  toId: '', debtId: '', debtAmount: 0, memo: '' },
+      recurring: { id, name: '새 반복 지출', category: '공동생활비', owner: '공동',
+                   amount: 0, day: 1, applied: [] }
     };
     return map[kind] || null;
+  }
+
+  /* 반복 지출을 이번 달에 아직 안 만들었으면 생활비 내역으로 자동 생성한다.
+     같은 달에 두 번 만들지 않도록 applied 목록에 달을 기록한다. */
+  async function applyRecurrings(month = app.month) {
+    if (app.busy) return;
+    const due = app.state.recurrings.filter(r =>
+      num(r.amount) > 0 && !(r.applied || []).includes(month));
+    if (!due.length) return;
+    const [my, mm] = month.split('-').map(Number);
+    const lastDay = new Date(my, mm, 0).getDate();
+    await mutate(
+      state => {
+        for (const r of state.recurrings) {
+          if (num(r.amount) <= 0 || (r.applied || []).includes(month)) continue;
+          const day = Math.min(r.day || 1, lastDay);
+          state.transactions.push({
+            id: uid(), date: `${month}-${pad(day)}`, owner: r.owner,
+            category: r.category, place: r.name, amount: num(r.amount),
+            memo: '반복 지출 자동 생성'
+          });
+          r.applied = [...(r.applied || []), month];
+        }
+      },
+      {
+        action: 'create', type: 'recurring', id: null,
+        summary: `${monthLabel(month)} 반복 지출 ${due.length}건 자동 반영`,
+        pick: () => ({ 반영: due.map(r => r.name).join(', ') }),
+        success: `반복 지출 ${due.length}건을 반영했습니다.`
+      }
+    );
   }
 
   async function addEntity(kind, presetName) {
@@ -3369,6 +3684,13 @@
           x.dueDate = d.get('dueDate') || '';
           x.scenarioId = d.get('scenarioId') || '';
           x.memo = String(d.get('memo') || '').trim();
+
+        } else if (kind === 'recurring') {
+          x.name = name;
+          x.category = String(d.get('category') || '공동생활비').trim();
+          x.owner = d.get('owner') || x.owner;
+          x.day = Math.min(28, Math.max(1, num(d.get('day')) || 1));
+          x.amount = num(d.get('amount'));
         }
       },
       {
@@ -3488,7 +3810,9 @@
     render();
 
     try {
-      await readSpace({ force: true });
+      // 오프라인 중 새로고침했다면, 서버 상태로 덮기 전에 로컬 미저장 변경부터 올린다
+      if (app.pendingDirty) await resyncDirtyState();
+      else await readSpace({ force: true });
       startRealtime();
       await flushPending();
     } catch (e) {
@@ -3591,6 +3915,15 @@
       return;
     }
 
+    // 동시 편집 소프트 잠금: 상대가 편집 중이면 새 편집 시작을 막는다(구글 시트식)
+    const EDIT_TRIGGERS =
+      '[data-open-row],[data-add],[data-longedit],[data-open-saving],' +
+      '[data-quick-add],[data-add-on-date],[data-edit-tx]';
+    if (app.remoteEditor && !app.openRow && t.closest(EDIT_TRIGGERS)) {
+      toast(`${app.remoteEditor.actor}님이 "${app.remoteEditor.label}"을(를) 수정 중입니다. 저장이 끝나면 편집할 수 있습니다.`);
+      return;
+    }
+
     const tab = t.closest('[data-tab]');
     if (tab) {
       const next = tab.dataset.tab;
@@ -3611,6 +3944,8 @@
       render();
       window.scrollTo({ top: 0 });
       if (app.tab === 'logs') loadLogs().catch(err => toast(err.message));
+      // 입력 화면에 들어오면 이번 달 반복 지출을 자동으로 반영한다
+      if (app.tab === 'monthly') applyRecurrings().catch(() => {});
       return;
     }
 
@@ -3621,6 +3956,19 @@
     if (shift) { app.month = shiftMonth(app.month, num(shift.dataset.shift)); render(); return; }
 
     if (t.closest('[data-apply-live]')) { render(); return; }
+
+    // 월별 리포트 — 인쇄(브라우저에서 PDF로 저장)
+    if (t.closest('[data-report-print]')) {
+      document.body.classList.add('printing-report');
+      window.print();
+      setTimeout(() => document.body.classList.remove('printing-report'), 500);
+      return;
+    }
+    // 월별 리포트 — 이미지(PNG)로 저장. 요약 값을 canvas에 직접 그린다.
+    if (t.closest('[data-report-image]')) {
+      exportReportImage();
+      return;
+    }
 
     // 순자산 추이 막대를 누르면 그달로 이동해 그달 순자산을 보여준다
     const trendMonth = t.closest('[data-trend-month]');
@@ -4169,6 +4517,11 @@
       let name = t.value;
       preset.selectedIndex = 0;              // 다음에 또 고를 수 있게 되돌린다
       if (!name) return;
+      // 동시 편집 잠금: 상대가 편집 중이면 새 항목 추가도 막는다
+      if (app.remoteEditor && !app.openRow) {
+        toast(`${app.remoteEditor.actor}님이 수정 중입니다. 저장이 끝나면 추가할 수 있습니다.`);
+        return;
+      }
       if (name === '__custom') {
         name = prompt('새 항목 이름을 입력해주세요.') || '';
         if (!String(name).trim()) return;
@@ -4251,7 +4604,7 @@
 
   /* 뒤로가기 = 왔던 화면의 그 자리(스크롤 포함)로 복원.
      상세로 들어갈 때 직전 화면 스냅샷을 스택에 쌓고, 뒤로가기 때 그대로 되돌린다. */
-  const SUB_TABS = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes'];
+  const SUB_TABS = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes', 'report'];
 
   function snapshot() {
     return {

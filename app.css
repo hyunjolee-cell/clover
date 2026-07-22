@@ -1588,3 +1588,50 @@ button.ch-lbl:active { transform: scale(.96); }
   background: var(--warn-bg); border-radius: 4px; padding: 1px 6px; margin-left: 4px;
 }
 .est-note { color: var(--warn-text); font-weight: 600; }
+
+/* 동시 편집 소프트 잠금 배너 --------------------------------------------- */
+.edit-lock-banner {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin: 8px 16px 0; padding: 10px 14px; border-radius: 12px;
+  background: var(--warn-bg); color: var(--warn-text);
+  border: 1px solid color-mix(in srgb, var(--warn-text) 30%, transparent);
+  font-size: 13px; font-weight: 600;
+}
+.edit-lock-banner .ico { flex: none; }
+
+/* 월별 리포트 ------------------------------------------------------------- */
+.report-head {
+  display: flex; flex-direction: column; gap: 2px;
+  padding-bottom: 14px; margin-bottom: 14px; border-bottom: 2px solid var(--line);
+}
+.report-head b { font-size: 18px; color: var(--blue-dark); }
+.report-head span { font-size: 13px; color: var(--g500); }
+.report-kpis {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; margin-bottom: 18px;
+}
+.report-kpis > div { display: flex; flex-direction: column; gap: 3px; }
+.report-kpis small { font-size: 12px; color: var(--g500); }
+.report-kpis b { font-size: 20px; font-weight: 700; }
+.report-rows { display: flex; flex-direction: column; }
+.report-rows > div {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px;
+}
+.report-rows > div.sub { padding-left: 14px; color: var(--g500); font-size: 14px; }
+.report-rows b.plus { color: var(--success-text); }
+.report-rows b.minus { color: var(--danger-text); }
+.report-rows b.keep { color: var(--blue-dark); }
+.report-foot { margin-top: 14px; font-size: 12px; color: var(--g500); text-align: right; }
+
+/* 인쇄: 리포트 카드만 남기고 나머지는 숨긴다(PDF로 저장) */
+@media print {
+  body.printing-report .app > *:not(.main),
+  body.printing-report .tabbar,
+  body.printing-report .page-head,
+  body.printing-report .report-page .row { display: none !important; }
+  body.printing-report #reportSheet {
+    box-shadow: none !important; border: 1px solid #ddd !important;
+    margin: 0 !important; max-width: 100% !important;
+  }
+  body.printing-report { background: #fff !important; }
+}
