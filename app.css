@@ -1510,26 +1510,34 @@ button.day-item b .ico { color: var(--g300); vertical-align: middle; }
 .card.metric[data-goto]:hover::after, button.hero-item:hover::after { color: var(--blue); }
 
 /* 눌러서 편집으로 가는 목록 행은 왼쪽에 옅은 강조 바 */
-.row-brief[data-longedit] { border-left: 3px solid var(--sky); }
-.row-brief[data-longedit]:hover { border-left-color: var(--blue); }
-/* 길게 눌러 편집할 수 있는 행에는 "길게" 배지를 화살표 앞에 보여준다 */
-.row-brief[data-longedit] .brief-arrow::before,
-.day-item[data-longedit] b::before {
-  content: '길게';
-  font-size: 9.5px; font-weight: 800; color: var(--blue-deep);
-  background: var(--sky); border-radius: 4px;
-  padding: 1.5px 5px; margin-right: 5px; vertical-align: middle;
-  letter-spacing: -.02em;
+/* 길게 눌러 편집할 수 있는 행 — 텍스트 대신 디자인으로 표시.
+   왼쪽에 두툼한 파란 엣지 바 + 오른쪽 화살표 앞 세로 점선 구분으로
+   "이 줄은 눌러서 들어간다"를 시각적으로 알린다. */
+.row-brief[data-longedit] {
+  border-left: 4px solid var(--blue-pale);
+  transition: border-color .14s, background .14s;
 }
-/* 목록 위 안내: 짧게=보기, 길게=편집 */
+.row-brief[data-longedit]:hover { border-left-color: var(--blue); background: var(--sky-light); }
+.row-brief[data-longedit] .brief-arrow {
+  padding-left: 10px; margin-left: 2px;
+  border-left: 1.5px dashed var(--g200);
+  color: var(--blue); position: relative;
+}
+/* 눌리는 동안 왼쪽 엣지가 파랗게 차오른다 (lp-on 애니메이션과 함께) */
+.row-brief[data-longedit].lp-on { border-left-color: var(--blue); }
+
+/* 목록 위 안내 — 아이콘 느낌의 엣지 견본으로 설명 */
 .longedit-hint {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   font-size: 12px; color: var(--g500);
   background: var(--g50); border-radius: 8px;
   padding: 8px 11px; margin-bottom: 8px;
 }
-.longedit-hint b { color: var(--blue-deep);
-  background: var(--sky); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+.longedit-hint::before {
+  content: ''; width: 4px; height: 16px; border-radius: 2px;
+  background: var(--blue-pale); flex-shrink: 0;
+}
+.longedit-hint b { color: var(--blue-deep); font-weight: 700; }
 
 /* 특이사항 메모 */
 .note-list { display: grid; gap: 8px; margin-top: 12px; }
@@ -1541,3 +1549,24 @@ button.day-item b .ico { color: var(--g300); vertical-align: middle; }
 }
 .note-foot small { color: var(--g400); font-size: 12px; }
 textarea { resize: vertical; min-height: 70px; line-height: 1.6; }
+
+/* 오늘 카드 전체를 눌러 공동생활비 입력으로 */
+.today-card.clickable { cursor: pointer; }
+.today-card.clickable:active { transform: scale(.99); }
+
+/* 그래프 데이터 라벨을 버튼으로 — 눌러서 해당 항목 상세로 */
+button.ch-lbl {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  width: 100%; min-height: 0; padding: 2px 5px; border: none;
+  font-size: 10.5px; font-weight: 700; border-radius: 5px;
+  white-space: nowrap; cursor: pointer; font: inherit;
+}
+button.ch-lbl b { font-weight: 800; font-variant-numeric: tabular-nums; }
+button.ch-lbl i { display: none; }
+button.ch-lbl.c-in { background: var(--blue); color: #fff; }
+button.ch-lbl.c-in b { color: #fff; }
+button.ch-lbl.c-out { background: var(--sky-bar); color: #fff; }
+button.ch-lbl.c-out b { color: #fff; }
+button.ch-lbl.c-save { background: #fff; box-shadow: inset 0 0 0 1px var(--g300); color: var(--g700); }
+button.ch-lbl.c-save b { color: var(--g900); }
+button.ch-lbl:active { transform: scale(.96); }

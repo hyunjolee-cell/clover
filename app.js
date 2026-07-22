@@ -1364,8 +1364,13 @@
           <span class="ch-x">${Number(d.m.slice(5))}월</span>
           ${big ? '' : `<div class="ch-labels">
             ${d.future ? '<span class="ch-none">기록 없음</span>'
-              : series.map(([label, key, cls]) =>
-                `<span class="${cls}"><i></i>${label} <b>${manLabel(d[key]) || '0만'}</b></span>`).join('')}
+              : series.map(([label, key, cls]) => {
+                // 라벨을 누르면 그 항목 상세로 (수입→정기소득, 지출→고정비, 적금→적금)
+                const dest = key === 'income' ? 'settings:income'
+                  : key === 'expense' ? 'settings:fixed' : 'settings:saving';
+                return `<button type="button" class="${cls} ch-lbl" data-goto="${dest}">
+                  <i></i>${label} <b>${manLabel(d[key]) || '0만'}</b></button>`;
+              }).join('')}
           </div>`}
         </div>`;
     }).join('');
@@ -1407,8 +1412,8 @@
         <!-- 월 제목 바로 아래: 수입·지출·적금 6개월 추이 그래프 -->
         ${trendChart()}
 
-        <!-- 오늘 카드: 남은 공동생활비 + 예산 막대 + 개인 생활비까지 흡수 -->
-        <article class="today-card ${over ? 'over' : ''}">
+        <!-- 오늘 카드: 눌러 공동생활비 입력 상세로. 안쪽 지출기록 버튼은 그대로 -->
+        <article class="today-card clickable ${over ? 'over' : ''}" data-goto="monthly">
           <div class="today-top">
             <span>이번 달 공동생활비 ${over ? '초과' : '남음'}</span>
             <span class="today-budget">예산 ${won(s.sharedBudget)}</span>
@@ -1422,11 +1427,11 @@
         </article>
 
         <div class="hero">
-          <div class="hero-item">
+          <button class="hero-item" type="button" data-home-open="flow">
             <small>이번 달 남는 금액</small>
             <strong class="${s.remaining < 0 ? 'minus' : ''}">${won(s.remaining)}</strong>
-            <small>총수입 − 적금·저축 − 총지출</small>
-          </div>
+            <small>총수입 − 적금·저축 − 총지출 · 자세히</small>
+          </button>
           <button class="hero-item" type="button" data-goto="assets">
             <small>현재 순자산</small>
             <strong>${won(netAssets())}</strong>
@@ -1542,7 +1547,7 @@
 
     if (!list.length) return emptyRow('조건에 맞는 사용내역이 없습니다.');
     // 평소엔 한 줄로 접어 스크롤을 줄이고, 누른 행만 펼쳐 편집한다
-    const hint = `<div class="longedit-hint">짧게 누르면 보기 · <b>길게 누르면 바로 편집</b></div>`;
+    const hint = `<div class="longedit-hint">눌러서 보기 · <b>길게 눌러 바로 편집</b> (파란 줄)</div>`;
     return hint + list.map(x => {
       const open = app.openRow === `transaction:${x.id}`;
       if (!open) {
@@ -1683,7 +1688,7 @@
   function historyRows(kind, list, opts = {}) {
     if (!list.length) return emptyRow('등록된 항목이 없습니다. 오른쪽 위 추가 버튼을 눌러주세요.');
     const field = kind === 'utility' ? 'estimateHistory' : 'history';
-    const hint = `<div class="longedit-hint">짧게 누르면 보기 · <b>길게 누르면 바로 편집</b></div>`;
+    const hint = `<div class="longedit-hint">눌러서 보기 · <b>길게 눌러 바로 편집</b> (파란 줄)</div>`;
     return hint + list.map(x => {
       const history = x[field];
       const applied = historyFrom(history, app.month);
@@ -1771,7 +1776,7 @@
     if (!app.state.assets.length)
       return emptyRow('등록된 자산·부채가 없습니다. 추가 버튼을 눌러주세요.');
 
-    const hint = `<div class="longedit-hint">짧게 누르면 보기 · <b>길게 누르면 바로 편집</b></div>`;
+    const hint = `<div class="longedit-hint">눌러서 보기 · <b>길게 눌러 바로 편집</b> (파란 줄)</div>`;
     return hint + app.state.assets.map(x => {
       const open = app.openRow === `asset:${x.id}`;
       const value = assetAt(x);
@@ -3601,6 +3606,34 @@
       return;
     }
 
+    // 카드 안의 실제 버튼(지출기록 등)이 카드 이동에 가로채이지 않도록 먼저 처리
+    if (t.closest('[data-quick-add]')) {
+      const id = uid();
+      const date = app.selectedDate && monthOf(app.selectedDate) === app.month
+        ? app.selectedDate
+        : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
+      app.tab = 'monthly';
+      app.openRow = `transaction:${id}`;
+      await mutate(
+        state => {
+          state.transactions.push({ id, date, owner: '공동', category: DEFAULT_CATEGORY,
+                                    place: '', amount: 0, memo: '' });
+        },
+        {
+          action: 'create', type: 'transaction', id,
+          summary: `생활비 내역 ${date} 추가`,
+          pick: s => findEntity('transaction', id, s),
+          success: '지출을 기록해주세요. 금액을 채워주세요.'
+        }
+      );
+      const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
+      if (row) {
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.querySelector('input[name="place"]')?.focus();
+      }
+      return;
+    }
+
     const goto = t.closest('[data-goto]');
     if (goto) {
       const [tab, arg] = goto.dataset.goto.split(':');
@@ -3690,33 +3723,6 @@
     }
 
     // 어느 화면에서든 오늘 날짜로 지출 한 줄을 바로 만든다
-    if (t.closest('[data-quick-add]')) {
-      const id = uid();
-      const date = app.selectedDate && monthOf(app.selectedDate) === app.month
-        ? app.selectedDate
-        : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
-      await mutate(
-        state => {
-          state.transactions.push({
-            id, date, owner: '공동', category: DEFAULT_CATEGORY,
-            place: '', amount: 0, memo: ''
-          });
-        },
-        {
-          action: 'create', type: 'transaction', id,
-          summary: `생활비 내역 ${date} 추가`,
-          pick: s => findEntity('transaction', id, s),
-          success: '내역을 추가했습니다. 금액을 채워주세요.'
-        }
-      );
-      app.tab = 'monthly';
-      render();
-      const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
-      row?.scrollIntoView({ block: 'center' });
-      row?.querySelector('input[name="place"]')?.focus();
-      return;
-    }
-
     // 달력 내역을 눌러 입력 화면의 해당 항목으로 바로 이동
     const editTx = t.closest('[data-edit-tx]');
     if (editTx) {
