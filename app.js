@@ -181,6 +181,7 @@
       cards: [],             // 통장에 연결된 신용카드
       flows: [],             // 통장 사이 이체 규칙 — 흐름도의 화살표
       bigSpends: [],         // 집·차 같은 목돈 지출 — 어느 자산에서 나가 무엇으로 남았는지
+      notes: [],             // 특이사항 메모 — 저장하면 계속 누적
       defaults: null,        // 사용자가 저장해 둔 기본값 (없으면 가계부 25.10 원본을 쓴다)
       monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
     };
@@ -331,8 +332,14 @@
 
     for (const key of ['recurringIncomes', 'fixedCosts', 'utilities', 'savings', 'assets',
                        'budgets', 'bonuses', 'transactions', 'scenarios', 'goals',
-                       'accounts', 'cards', 'flows', 'bigSpends']) {
+                       'accounts', 'cards', 'flows', 'bigSpends', 'notes']) {
       if (!Array.isArray(s[key])) s[key] = [];
+    }
+    for (const n of s.notes) {
+      n.id ||= uid();
+      n.text = String(n.text || '');
+      n.at ||= '';
+      n.actor ||= '';
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
     if (s.defaults !== null && typeof s.defaults !== 'object') s.defaults = null;
@@ -987,7 +994,8 @@
     asset: '자산·부채', budget: '생활비 예산', transaction: '생활비 내역',
     scenario: '포캐스팅 시나리오', goal: '자산 목표', settings: '설정',
     space: '공유공간', device: '기기',
-    account: '통장', card: '연동 카드', flow: '자동이체', bigSpend: '목돈 지출'
+    account: '통장', card: '연동 카드', flow: '자동이체', bigSpend: '목돈 지출',
+    note: '특이사항 메모'
   };
   const ACTION_LABEL = {
     create: '추가', update: '수정', delete: '삭제', connect: '접속', system: '시스템'
@@ -1533,27 +1541,46 @@
     list = list.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
     if (!list.length) return emptyRow('조건에 맞는 사용내역이 없습니다.');
-    return list.map(x => `
-      <form class="item" data-row="transaction" data-id="${x.id}">
-        <label class="field"><span>사용일</span>
-          <input name="date" type="date" value="${esc(x.date)}"></label>
-        <label class="field"><span>카테고리</span>
-          <select name="category">
-            ${[...new Set([DEFAULT_CATEGORY, ...QUICK_CATEGORIES, x.category])].filter(Boolean).map(c =>
-              `<option ${x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-          </select></label>
-        <label class="field"><span>누가 결제</span>${ownerSelect('owner', x.owner)}</label>
-        <label class="field"><span>사용처</span>
-          <input name="place" value="${esc(x.place)}"></label>
-        <label class="field"><span>금액</span>
-          <input name="amount" inputmode="numeric" value="${num(x.amount)}"></label>
-        <label class="field wide"><span>메모</span>
-          <input name="memo" value="${esc(x.memo)}"></label>
-        <div class="item-actions">
-          <button class="secondary" type="submit">수정 저장</button>
-          <button class="danger" type="button" data-delete="transaction" data-id="${x.id}">삭제</button>
-        </div>
-      </form>`).join('');
+    // 평소엔 한 줄로 접어 스크롤을 줄이고, 누른 행만 펼쳐 편집한다
+    return list.map(x => {
+      const open = app.openRow === `transaction:${x.id}`;
+      if (!open) {
+        return `
+          <button type="button" class="row-brief" data-open-row="transaction:${x.id}"
+                  data-longedit="transaction:${x.id}">
+            <span class="brief-main">
+              <b>${esc(x.place || x.category)}</b>
+              <span class="tag">${esc(x.category)}</span>${ownerTag(x.owner)}
+              <small>${esc(String(x.date).slice(5).replace('-', '/'))}${
+                x.memo ? ` · ${esc(x.memo)}` : ''}</small>
+            </span>
+            <span class="brief-amount minus">−${won(x.amount)}</span>
+            <span class="brief-arrow">${icon('chevron', 18)}</span>
+          </button>`;
+      }
+      return `
+        <form class="item open" data-row="transaction" data-id="${x.id}">
+          <label class="field"><span>사용일</span>
+            <input name="date" type="date" value="${esc(x.date)}"></label>
+          <label class="field"><span>카테고리</span>
+            <select name="category">
+              ${[...new Set([DEFAULT_CATEGORY, ...QUICK_CATEGORIES, x.category])].filter(Boolean).map(c =>
+                `<option ${x.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select></label>
+          <label class="field"><span>누가 결제</span>${ownerSelect('owner', x.owner)}</label>
+          <label class="field"><span>사용처</span>
+            <input name="place" value="${esc(x.place)}"></label>
+          <label class="field"><span>금액</span>
+            <input name="amount" inputmode="numeric" value="${num(x.amount)}"></label>
+          <label class="field wide"><span>메모</span>
+            <input name="memo" value="${esc(x.memo)}"></label>
+          <div class="item-actions">
+            <button class="secondary" type="submit">저장</button>
+            <button class="ghost" type="button" data-close-row>접기</button>
+            <button class="danger" type="button" data-delete="transaction" data-id="${x.id}">삭제</button>
+          </div>
+        </form>`;
+    }).join('');
   }
 
   function monthlyView() {
@@ -1834,21 +1861,26 @@
 
   /* 순자산 추이 — 최근 12개월을 막대로 */
   function netTrend() {
-    const series = netAssetSeries(12);
-    const values = series.map(p => p.net);
-    const max = Math.max(...values.map(Math.abs), 1);
-    const first = values[0], last = values[values.length - 1];
-    const grew = last - first;
+    // 그 해 1~12월 순으로 본다
+    const [year] = app.month.split('-').map(Number);
+    const series = Array.from({ length: 12 }, (_, i) => {
+      const m = `${year}-${pad(i + 1)}`;
+      return { month: m, net: netAssets(m) };
+    });
+    const max = Math.max(...series.map(p => Math.abs(p.net)), 1);
+    const cur = netAssets(app.month);
+    const jan = series[0].net, dec = series[11].net;
+    const grew = dec - jan;
 
     return `
       <article class="card trend-card">
         <div class="card-head">
           <div>
             <h3>순자산 추이</h3>
-            <small>최근 12개월 · ${grew >= 0 ? '늘어난' : '줄어든'} 금액
-              <b class="${grew >= 0 ? 'plus' : 'minus'}">${won(Math.abs(grew))}</b></small>
+            <small>${year}년 1~12월 · 연중 변화
+              <b class="${grew >= 0 ? 'plus' : 'minus'}">${grew >= 0 ? '+' : '−'}${won(Math.abs(grew))}</b></small>
           </div>
-          <b class="trend-cur">${won(last)}</b>
+          <b class="trend-cur">${won(cur)}</b>
         </div>
         <div class="trend">
           ${series.map(p => {
@@ -1856,7 +1888,7 @@
             const isNow = p.month === app.month;
             return `
               <button type="button" class="trend-col ${isNow ? 'now' : ''}"
-                      title="${monthLabel(p.month)} ${won(p.net)}">
+                      data-trend-month="${p.month}">
                 <span class="trend-bars"><span class="trend-bar ${p.net < 0 ? 'neg' : ''}"
                   style="height:${h}%"></span></span>
                 <span class="trend-label">${Number(p.month.slice(5))}</span>
@@ -2809,6 +2841,40 @@
       </section>`;
   }
 
+  /* --- 15-C-2. 화면: 특이사항 메모 ---------------------------------------- */
+  /* 저장하면 계속 쌓이는 메모. 최신이 위로. 변경 로그와 같은 감사 원칙을 따른다. */
+  function notesView() {
+    const list = [...app.state.notes].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    return `
+      <section class="page">
+        <div class="page-head">
+          <div><span class="eyebrow">특이사항 메모</span><h2>메모</h2></div>
+        </div>
+
+        <article class="card">
+          <form id="noteForm" class="stack">
+            <label class="field"><span>새 메모</span>
+              <textarea name="text" rows="3"
+                placeholder="예: 8월 관리비 인상 예정 · 보너스는 9월 지급 · 여행적금 목표 300만"
+                required></textarea></label>
+            <button class="primary" type="submit">메모 저장</button>
+          </form>
+        </article>
+
+        <div class="note-list">
+          ${list.length ? list.map(n => `
+            <article class="card note-card">
+              <p class="note-text">${esc(n.text).replace(/\n/g, '<br>')}</p>
+              <div class="note-foot">
+                <small>${n.at ? fmtTime(n.at) : ''}${n.actor ? ` · ${esc(n.actor)}` : ''}</small>
+                <button class="ghost tiny" type="button" data-del-note="${n.id}">삭제</button>
+              </div>
+            </article>`).join('')
+          : `<article class="card">${emptyRow('아직 메모가 없습니다. 위에 적어 저장하면 여기에 쌓입니다.')}</article>`}
+        </div>
+      </section>`;
+  }
+
   /* --- 15-D. 화면: 더보기 -------------------------------------------------- */
 
   function moreView() {
@@ -2821,6 +2887,7 @@
       ]],
       ['분석·도구', [
         ['forecast', 'chart', '자산 포캐스팅', '시나리오별 예상 순자산'],
+        ['notes', 'edit', '특이사항 메모', '기록해 두면 계속 쌓입니다'],
         ['logs', 'history', '변경 로그', '누가 언제 무엇을 바꿨나'],
         ['defaults', 'book', '기본값 관리', '기본값 저장·불러오기'],
         ['guide', 'book', '사용 설명서', '기능을 언제 쓰는지 한 장']
@@ -2975,14 +3042,14 @@
     const views = {
       home: homeView, calendar: calendarView, monthly: monthlyView, assets: assetsView,
       forecast: forecastView, flow: flowView, settings: settingsView, defaults: defaultsView,
-      budgets: budgetsView,
+      budgets: budgetsView, notes: notesView,
       logs: logsView, more: moreView
     };
     const content = (views[app.tab] || homeView)();
 
     // 더보기 안쪽 화면에서는 돌아갈 곳을 알려준다
-    const sub = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets'].includes(app.tab);
-    const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름',
+    const sub = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes'].includes(app.tab);
+    const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름', notes: '특이사항 메모',
                        settings: '항목 설정', logs: '변경 로그', defaults: '기본값 관리', budgets: '생활비 예산' }[app.tab];
 
     return `
@@ -3486,6 +3553,13 @@
       return;
     }
 
+    // 사용 설명서는 탭이 아니라 새 창으로 연다 (탭 핸들러보다 먼저 처리)
+    if (t.closest('[data-tab="guide"]')) {
+      const w = window.open('./guide.html', '_blank', 'noopener');
+      if (!w) location.href = './guide.html';   // 팝업 차단 시 같은 탭으로
+      return;
+    }
+
     const tab = t.closest('[data-tab]');
     if (tab) {
       const prev = app.tab;
@@ -3502,9 +3576,15 @@
 
     if (t.closest('[data-apply-live]')) { render(); return; }
 
-    // 홈의 흐름 줄에서 해당 설정 화면으로 바로 이동
-    const guide = t.closest('[data-tab="guide"]');
-    if (guide) { window.open('./guide.html', '_blank', 'noopener'); return; }
+    // 순자산 추이 막대를 누르면 그달로 이동해 그달 순자산을 보여준다
+    const trendMonth = t.closest('[data-trend-month]');
+    if (trendMonth) {
+      const m = trendMonth.dataset.trendMonth;
+      app.month = m;
+      render();
+      toast(`${monthLabel(m)} 순자산 ${won(netAssets(m))}`);
+      return;
+    }
 
     const chartBig = t.closest('[data-chart-big]');
     if (chartBig) { app.chartBig = chartBig.dataset.chartBig === '1'; render(); return; }
@@ -3640,6 +3720,7 @@
       const [type, id] = editTx.dataset.editTx.split(':');
       const rowKind = type === 'income' ? 'bonus' : 'transaction';
       app.tab = 'monthly';
+      if (rowKind === 'transaction') app.openRow = `transaction:${id}`;   // 접힌 내역을 펼친다
       render();
       window.scrollTo({ top: 0 });
       const row = document.querySelector(`form[data-row="${rowKind}"][data-id="${id}"]`);
@@ -3660,6 +3741,7 @@
       const lastDay = new Date(my, mm, 0).getDate();
       const date = app.month === currentMonth
         ? ymd(today()) : `${app.month}-${pad(Math.min(1, lastDay))}`;
+      app.openRow = `transaction:${id}`;   // 새 내역은 펼친 채로 만든다
       await mutate(
         state => {
           state.transactions.push({ id, date, owner: '공동', category,
@@ -3672,7 +3754,7 @@
           success: `${category} 항목을 만들었습니다. 금액을 채워주세요.`
         }
       );
-      // 유형칩 바로 아래에 만든 행으로 이동하고 금액 칸에 커서
+      // 유형칩 바로 아래에 만든 행으로 이동하고 사용처 칸에 커서
       const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
       if (row) {
         row.classList.add('just-added');
@@ -3797,6 +3879,23 @@
             return x ? { name: x.name, 모인돈: savingBalance(x) } : null;
           },
           success: '인출 기록을 지웠습니다.'
+        }
+      );
+      return;
+    }
+
+    const delNote = t.closest('[data-del-note]');
+    if (delNote) {
+      const id = delNote.dataset.delNote;
+      const note = app.state.notes.find(n => n.id === id);
+      if (!note || !confirm('이 메모를 삭제할까요?')) return;
+      await mutate(
+        state => { state.notes = state.notes.filter(n => n.id !== id); },
+        {
+          action: 'delete', type: 'note', id,
+          summary: `특이사항 메모 삭제: ${String(note.text).slice(0, 20)}`,
+          pick: () => ({ text: note.text }),
+          success: '메모를 삭제했습니다.'
         }
       );
       return;
@@ -4042,6 +4141,23 @@
     try {
       if (form.id === 'authForm') { await handleAuth(form); return; }
 
+      if (form.id === 'noteForm') {
+        const text = String(new FormData(form).get('text') || '').trim();
+        if (!text) return;
+        const id = uid();
+        const at = new Date().toISOString();
+        await mutate(
+          state => { state.notes.push({ id, text, at, actor: app.space.actor }); },
+          {
+            action: 'create', type: 'note', id,
+            summary: `특이사항 메모 추가: ${text.slice(0, 20)}${text.length > 20 ? '…' : ''}`,
+            pick: s => s.notes.find(n => n.id === id) || null,
+            success: '메모를 저장했습니다.'
+          }
+        );
+        return;
+      }
+
       if (form.id === 'newPasswordForm') {
         const d = new FormData(form);
         const pw = String(d.get('password') || '');
@@ -4076,7 +4192,7 @@
   /* 브라우저 뒤로가기를 앱 내부 뎁스로 처리한다.
      한 번 뒤로 = 펼친 행 닫기 → 서브 화면이면 더보기로 → 홈으로.
      홈에서 한 번 더 뒤로 눌러야 앱을 나간다. */
-  const SUB_TABS = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets'];
+  const SUB_TABS = ['forecast', 'flow', 'settings', 'logs', 'defaults', 'budgets', 'notes'];
   function goBackOneDepth() {
     if (app.screen !== 'app') return false;
     if (app.openRow) { app.openRow = null; render(); return true; }

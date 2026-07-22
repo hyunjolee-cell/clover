@@ -1489,3 +1489,37 @@ button.day-item b .ico { color: var(--g300); vertical-align: middle; }
   0% { box-shadow: inset 0 0 0 0 var(--blue-pale); }
   100% { box-shadow: inset 0 0 0 3px var(--blue); }
 }
+
+/* ============================================================================
+ * 클릭 가능 힌트 — 누르기 전에도 "누르면 들어간다"를 알 수 있게
+ * ========================================================================== */
+[data-goto], [data-open-row], [data-open-saving], [data-edit-tx],
+[data-budget-view], [data-trend-month] {
+  cursor: pointer;
+}
+/* 요약 카드류(홈·달력)는 우측 상단에 옅은 화살표로 진입 가능 표시 */
+.card.metric[data-goto], button.hero-item {
+  position: relative;
+}
+.card.metric[data-goto]::after, button.hero-item::after {
+  content: '›';
+  position: absolute; top: 12px; right: 14px;
+  color: var(--g300); font-size: 18px; font-weight: 700; line-height: 1;
+}
+.card.metric[data-goto]:hover, button.hero-item:hover { background: var(--g50); }
+.card.metric[data-goto]:hover::after, button.hero-item:hover::after { color: var(--blue); }
+
+/* 눌러서 편집으로 가는 목록 행은 왼쪽에 옅은 강조 바 */
+.row-brief[data-longedit] { border-left: 3px solid var(--sky); }
+.row-brief[data-longedit]:hover { border-left-color: var(--blue); }
+
+/* 특이사항 메모 */
+.note-list { display: grid; gap: 8px; margin-top: 12px; }
+.note-card { padding: 15px 16px; }
+.note-text { font-size: 14.5px; line-height: 1.6; color: var(--g900); white-space: pre-wrap; }
+.note-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 10px;
+}
+.note-foot small { color: var(--g400); font-size: 12px; }
+textarea { resize: vertical; min-height: 70px; line-height: 1.6; }
