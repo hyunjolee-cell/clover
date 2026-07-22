@@ -3069,7 +3069,7 @@
       <div class="app">
         <header class="topbar">
           <div class="brand">
-            ${sub ? `<button class="back" type="button" data-tab="more" aria-label="뒤로">${icon("back", 22)}</button>`
+            ${sub ? `<button class="back" type="button" data-back aria-label="뒤로">${icon("back", 22)}</button>`
                   : `<span class="mark">${icon("clover", 24)}</span>`}
             <div><b>${sub ? esc(subTitle) : 'CLOVER'}</b>
               <small>${esc(app.space.name || '우리집')}</small></div>
@@ -3592,6 +3592,9 @@
       if (app.tab === 'logs') loadLogs().catch(err => toast(err.message));
       return;
     }
+
+    // 상단 ← 버튼: 브라우저 뒤로가기와 똑같이 왔던 화면·스크롤로 복원
+    if (t.closest('[data-back]')) { history.back(); return; }
 
     const shift = t.closest('[data-shift]');
     if (shift) { app.month = shiftMonth(app.month, num(shift.dataset.shift)); render(); return; }
