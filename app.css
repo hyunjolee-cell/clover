@@ -1575,3 +1575,16 @@ button.ch-lbl.c-out b { color: #fff; }
 button.ch-lbl.c-save { background: #fff; box-shadow: inset 0 0 0 1px var(--g300); color: var(--g700); }
 button.ch-lbl.c-save b { color: var(--g900); }
 button.ch-lbl:active { transform: scale(.96); }
+
+/* 순자산 추이 — 미래(예상) 막대는 빗금으로 실제와 구분 */
+.trend-col.est .trend-bar {
+  background: repeating-linear-gradient(45deg,
+    var(--blue-pale) 0, var(--blue-pale) 3px, #fff 3px, #fff 6px);
+  opacity: .85;
+}
+.trend-col.est .trend-label { color: var(--g400); }
+.trend-cur small {
+  font-size: 11px; font-weight: 700; color: var(--warn-text);
+  background: var(--warn-bg); border-radius: 4px; padding: 1px 6px; margin-left: 4px;
+}
+.est-note { color: var(--warn-text); font-weight: 600; }

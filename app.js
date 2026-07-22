@@ -513,6 +513,7 @@
     homeOpen: null,        // 홈에서 펼친 섹션 (flow / sv:flex / sv:long)
     chartBig: false,       // 홈 그래프 전체보기
     navStack: [],          // 뒤로가기용 화면 스냅샷 스택 (왔던 자리 복원)
+    draft: null,           // 방금 새로 만든 미저장 항목 {id, kind} — 뒤로가기 시 롤백
     passwordReturn: '',    // 비밀번호 변경 후 돌아갈 화면
     pendingToast: '',      // render 후 표시할 토스트
     sync: '준비 중',
@@ -1366,9 +1367,13 @@
           ${big ? '' : `<div class="ch-labels">
             ${d.future ? '<span class="ch-none">기록 없음</span>'
               : series.map(([label, key, cls]) => {
-                // 라벨을 누르면 그 항목 상세로 (수입→정기소득, 지출→고정비, 적금→적금)
-                const dest = key === 'income' ? 'settings:income'
-                  : key === 'expense' ? 'settings:fixed' : 'settings:saving';
+                // 수입→정기소득, 적금→적금. 지출은 고정비·공과금·용돈·공동을 합친
+                // 종합이라 홈 돈 흐름의 "쓴 돈"을 펼쳐 전체를 보여준다.
+                if (key === 'expense') {
+                  return `<button type="button" class="${cls} ch-lbl" data-expense-detail>
+                    <i></i>${label} <b>${manLabel(d[key]) || '0만'}</b></button>`;
+                }
+                const dest = key === 'income' ? 'settings:income' : 'settings:saving';
                 return `<button type="button" class="${cls} ch-lbl" data-goto="${dest}">
                   <i></i>${label} <b>${manLabel(d[key]) || '0만'}</b></button>`;
               }).join('')}
@@ -1474,7 +1479,8 @@
         detail: [
           ['월 고정비', -s.fixed, '자동', 'settings:fixed'],
           ['공과금', -s.utility, '자동', 'settings:utility'],
-          ['개인 생활비', -s.personal, '자동', 'budgets'],
+          ['현조 용돈', -budgetByOwner(app.month, '현조'), '자동', 'budgets:현조'],
+          ['신영 용돈', -budgetByOwner(app.month, '신영'), '자동', 'budgets:신영'],
           ['공동 생활비', -s.spend, '입력분', 'monthly']
         ] }
     ];
@@ -1606,12 +1612,10 @@
           <div class="card-head">
             <div>
               <h3 class="accent">공동 생활비 사용내역</h3>
-              <small>함께 쓴 돈을 적습니다 · 그냥 추가하면 공동생활비</small>
             </div>
           </div>
 
           <div class="quick-cats">
-            <span class="quick-label">유형을 누르면 바로 아래에 만들어집니다</span>
             <div class="quick-row">
               <button type="button" class="quick-chip main" data-quick-cat="${DEFAULT_CATEGORY}">
                 ${icon('plus', 14)}공동생활비
@@ -1889,14 +1893,15 @@
             <small>${year}년 1~12월 · 연중 변화
               <b class="${grew >= 0 ? 'plus' : 'minus'}">${grew >= 0 ? '+' : '−'}${won(Math.abs(grew))}</b></small>
           </div>
-          <b class="trend-cur">${won(cur)}</b>
+          <b class="trend-cur">${won(cur)}${app.month > currentMonth ? ' <small>예상</small>' : ''}</b>
         </div>
         <div class="trend">
           ${series.map(p => {
             const h = Math.max(3, (Math.abs(p.net) / max) * 100);
             const isNow = p.month === app.month;
+            const future = p.month > currentMonth;   // 아직 오지 않은 달 = 예상값
             return `
-              <button type="button" class="trend-col ${isNow ? 'now' : ''}"
+              <button type="button" class="trend-col ${isNow ? 'now' : ''} ${future ? 'est' : ''}"
                       data-trend-month="${p.month}">
                 <span class="trend-bars"><span class="trend-bar ${p.net < 0 ? 'neg' : ''}"
                   style="height:${h}%"></span></span>
@@ -1904,7 +1909,8 @@
               </button>`;
           }).join('')}
         </div>
-        <p class="note">막대를 누르면 그달 순자산이 나옵니다.</p>
+        <p class="note">막대를 누르면 그달 순자산이 나옵니다.
+          <b class="est-note">빗금 막대는 아직 오지 않은 달의 예상값</b>입니다.</p>
       </article>`;
   }
 
@@ -2250,8 +2256,6 @@
             ${presetPicker(kind)}
           </div>
           <div class="list">${historyRows(kind, list, opts)}</div>
-          <p class="note">항목을 누르면 펼쳐집니다. 금액을 바꾸면
-            <b>적용 시작월</b>부터 반영되고 그 이전 달 금액은 그대로 남습니다.</p>
         </article>
 
         <article class="card">
@@ -3179,6 +3183,7 @@
     if (['income', 'fixed', 'utility', 'saving', 'budget', 'asset', 'bigSpend'].includes(kind)) {
       app.openRow = `${kind}:${entity.id}`;
     }
+    app.draft = { id: entity.id, kind };   // 저장 없이 뒤로가면 롤백할 미저장 항목
     await mutate(
       state => { listOf(kind, state).push(clone(entity)); },
       {
@@ -3191,6 +3196,7 @@
   }
 
   async function deleteEntity(kind, id) {
+    if (app.draft && app.draft.id === id) app.draft = null;   // 삭제하면 draft도 해제
     const name = entityName(kind, id);
     if (!confirm(`${ENTITY_LABEL[kind]} "${name}" 항목을 삭제할까요?\n삭제 기록은 로그에 남습니다.`))
       return;
@@ -3359,7 +3365,8 @@
           : '수정했습니다.'
       }
     );
-    // 저장하면 다시 접어 목록을 짧게 유지한다
+    // 저장했으면 미저장(draft) 표시를 해제하고, 접어 목록을 짧게 유지한다
+    if (app.draft && app.draft.id === id) app.draft = null;
     if (app.openRow === `${kind}:${id}`) { app.openRow = null; render(); }
   }
 
@@ -3604,6 +3611,17 @@
     const chartBig = t.closest('[data-chart-big]');
     if (chartBig) { app.chartBig = chartBig.dataset.chartBig === '1'; render(); return; }
 
+    // 그래프 "지출"은 고정비·공과금·현조/신영 용돈·공동생활비를 합친 종합이므로
+    // 홈의 돈 흐름 "쓴 돈"을 펼쳐 전체 내역을 한 화면에 보여준다.
+    if (t.closest('[data-expense-detail]')) {
+      app.homeOpen = 'flow';
+      render();
+      requestAnimationFrame(() => {
+        document.querySelector('.flow-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+      return;
+    }
+
     // 홈에서 흐름/모으는돈 펼침 — 한 번에 하나만 열어 스크롤을 줄인다
     const homeOpen = t.closest('[data-home-open]');
     if (homeOpen) {
@@ -3621,7 +3639,7 @@
         : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
       if (app.tab !== 'monthly') pushNav();   // 다른 화면에서 왔으면 그 자리로 돌아가게
       app.tab = 'monthly';
-      app.openRow = `transaction:${id}`;
+      app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
       await mutate(
         state => {
           state.transactions.push({ id, date, owner: '공동', category: DEFAULT_CATEGORY,
@@ -3759,7 +3777,7 @@
       const lastDay = new Date(my, mm, 0).getDate();
       const date = app.month === currentMonth
         ? ymd(today()) : `${app.month}-${pad(Math.min(1, lastDay))}`;
-      app.openRow = `transaction:${id}`;   // 새 내역은 펼친 채로 만든다
+      app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
       await mutate(
         state => {
           state.transactions.push({ id, date, owner: '공동', category,
@@ -4248,8 +4266,52 @@
     try { history.pushState({ clover: true }, ''); } catch {}
   }
 
-  function goBackOneDepth() {
+  /* 방금 만든 미저장 항목의 편집 폼에 실제로 뭔가 입력했는가 */
+  function draftDirty() {
+    if (!app.draft) return false;
+    const { kind, id } = app.draft;
+    const form = document.querySelector(`form[data-row="${kind}"][data-id="${id}"]`);
+    if (!form) return false;
+    const name = form.querySelector('[name="name"]')?.value.trim() || '';
+    const amount = num(form.querySelector('[name="amount"]')?.value);
+    const place = form.querySelector('[name="place"]')?.value.trim() || '';
+    const memo = form.querySelector('[name="memo"]')?.value.trim() || '';
+    // 기본 생성 상태(이름이 "새 …", 금액 0, 사용처·메모 빔)면 미작성으로 본다
+    const nameTouched = name && !name.startsWith('새 ');
+    return nameTouched || amount > 0 || !!place || !!memo;
+  }
+  /* 미저장 항목을 서버·로컬에서 조용히 되돌린다 */
+  async function discardDraft() {
+    if (!app.draft) return;
+    const { kind, id } = app.draft;
+    app.draft = null;
+    app.openRow = null;
+    await mutate(
+      state => {
+        const l = listOf(kind, state);
+        if (l) { const i = l.findIndex(x => x.id === id); if (i >= 0) l.splice(i, 1); }
+      },
+      { action: 'delete', type: kind, id, summary: `빈 ${ENTITY_LABEL[kind] || kind} 취소`,
+        pick: () => null, success: '' }
+    );
+  }
+
+  async function goBackOneDepth() {
     if (app.screen !== 'app') return false;
+
+    // 새로 만든 미저장 항목이 있으면: 작성 중이면 확인, 아니면 조용히 롤백
+    if (app.draft) {
+      if (draftDirty() &&
+          !confirm('작성 중이던 내용이 저장되지 않고 삭제됩니다. 나가시겠습니까?')) {
+        return true;   // 머무름 (뒤로가기 취소)
+      }
+      const snap = app.navStack.pop();
+      await discardDraft();                 // 빈/취소 항목 제거
+      if (snap) restoreSnapshot(snap);      // 만들기 전 화면·스크롤로 복원
+      else if (app.tab !== 'home') { app.tab = 'home'; render(); }
+      return true;
+    }
+
     // 펼친 편집 행이 있으면 먼저 닫는다 (같은 화면 안)
     if (app.openRow) { app.openRow = null; render(); return true; }
     // 스택에 왔던 화면이 있으면 그 자리로 복원
@@ -4260,8 +4322,8 @@
     if (app.tab !== 'home') { app.tab = 'home'; render(); return true; }
     return false;
   }
-  window.addEventListener('popstate', () => {
-    if (goBackOneDepth()) {
+  window.addEventListener('popstate', async () => {
+    if (await goBackOneDepth()) {
       try { history.pushState({ clover: true }, ''); } catch {}
     }
   });
