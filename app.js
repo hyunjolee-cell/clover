@@ -1548,7 +1548,7 @@
 
     if (!list.length) return emptyRow('조건에 맞는 사용내역이 없습니다.');
     // 평소엔 한 줄로 접어 스크롤을 줄이고, 누른 행만 펼쳐 편집한다
-    const hint = `<div class="longedit-hint">눌러서 보기 · <b>길게 눌러 바로 편집</b> (파란 줄)</div>`;
+    const hint = '';
     return hint + list.map(x => {
       const open = app.openRow === `transaction:${x.id}`;
       if (!open) {
@@ -1689,7 +1689,7 @@
   function historyRows(kind, list, opts = {}) {
     if (!list.length) return emptyRow('등록된 항목이 없습니다. 오른쪽 위 추가 버튼을 눌러주세요.');
     const field = kind === 'utility' ? 'estimateHistory' : 'history';
-    const hint = `<div class="longedit-hint">눌러서 보기 · <b>길게 눌러 바로 편집</b> (파란 줄)</div>`;
+    const hint = '';
     return hint + list.map(x => {
       const history = x[field];
       const applied = historyFrom(history, app.month);
@@ -1777,7 +1777,7 @@
     if (!app.state.assets.length)
       return emptyRow('등록된 자산·부채가 없습니다. 추가 버튼을 눌러주세요.');
 
-    const hint = `<div class="longedit-hint">눌러서 보기 · <b>길게 눌러 바로 편집</b> (파란 줄)</div>`;
+    const hint = '';
     return hint + app.state.assets.map(x => {
       const open = app.openRow === `asset:${x.id}`;
       const value = assetAt(x);
