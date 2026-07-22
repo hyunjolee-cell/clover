@@ -328,7 +328,12 @@ select {
 
 .grid { display: grid; gap: 12px; }
 .grid.two { grid-template-columns: 1fr; }
-.grid.three { grid-template-columns: 1fr; }
+/* 요약 3카드는 모바일에서도 한 줄에 — 세로로 쌓지 않아 스크롤을 줄인다 */
+.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.grid.three .card.metric { padding: 12px 10px; text-align: center; }
+.grid.three .card.metric small { font-size: 10.5px; }
+.grid.three .card.metric strong { font-size: 16px; margin: 2px 0; }
+.grid.three .card.metric[data-goto]::after { top: 8px; right: 8px; font-size: 15px; }
 
 .card {
   background: var(--surface);
@@ -349,16 +354,16 @@ select {
 /* --- 홈 ----------------------------------------------------------------- */
 
 .hero {
-  display: grid; gap: 14px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;   /* 남는금액·순자산 한 줄 */
   background: var(--surface);
   border-radius: var(--r-card);
   box-shadow: var(--sh-card);
   padding: 16px;
 }
-.hero-item small { display: block; color: var(--g500); font-size: 13px; }
+.hero-item small { display: block; color: var(--g500); font-size: 12px; }
 .hero-item strong {
-  display: block; font-size: 30px; font-weight: 700;
-  letter-spacing: -.035em; margin: 4px 0 2px;
+  display: block; font-size: 22px; font-weight: 700;
+  letter-spacing: -.035em; margin: 3px 0 2px;
   font-variant-numeric: tabular-nums;
 }
 
