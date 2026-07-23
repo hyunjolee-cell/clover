@@ -371,6 +371,10 @@
         fixHistory(x, 'history');
       }
     }
+    // 정기소득은 월급일을 가진다(기존 데이터 기본 25일). 달력 자동 표시에 쓴다.
+    for (const x of s.recurringIncomes) {
+      x.payday = Math.min(28, Math.max(1, num(x.payday) || 25));
+    }
 
     /* 적금은 매달 나가는 돈이면서 동시에 쌓이는 자산이다.
        시작 잔액과 인출 기록을 두어 지금 얼마가 모여 있는지 계산한다. */
@@ -538,7 +542,9 @@
     pendingDirty: false,   // 오프라인 변경이 서버에 미반영 상태인지 (새로고침해도 유지)
     pendingBase: null,     // 오프라인 편집이 갈라져 나온 서버 버전 (충돌 판정 기준)
     remoteEditor: null,    // 상대가 편집 중이면 { actor, label, at } — 동시편집 소프트잠금
-    lastPresence: '',      // 마지막으로 방송한 내 편집 상태 (중복 방송 방지)
+    lastPresence: '',      // 마지막으로 방송에 성공한 내 편집 상태 (중복 방송 방지)
+    presenceBusy: false,   // presence 방송 진행 중 (중복 호출 방지)
+    rtRetry: 0,            // 실시간 채널 재연결 시도 횟수
     undoStack: [],         // 되돌리기용 직전 상태 (최근 20건)
     expanded: new Set(),   // 로그 전후값 펼침
     channel: null,
@@ -610,11 +616,13 @@
     return e;
   }
   const assetAt = (a, month = app.month) => {
-    // 매월 자동 증가액을 시작월부터 그달까지 단순 누적(복리 아님)
+    // 매월 자동 증가액을 시작 다음 달부터 그달까지 단순 누적(복리 아님).
+    // 시작월(addFrom)에 적은 "그 달 잔액"이 이미 그 시점의 실제 잔액이므로,
+    // 그 달에는 증가분을 더하지 않고 다음 달부터 한 달치씩 얹는다(적금 잔액과 동일 규칙).
     let add = 0;
     const add1 = num(a.monthlyAdd);
-    if (add1 && a.addFrom && String(month) >= String(a.addFrom)) {
-      add = add1 * (monthsBetween(a.addFrom, month) + 1);
+    if (add1 && a.addFrom && String(month) > String(a.addFrom)) {
+      add = add1 * monthsBetween(a.addFrom, month);
     }
     return historyValue(a.history, month) + add + bigSpendEffect(a.id, month);
   };
@@ -1044,13 +1052,18 @@
           const st = app.channel.presenceState();
           const nowMs = Date.now();
           for (const key of Object.keys(st)) {
-            for (const pres of st[key]) {
-              if (!pres || pres.actor === app.space.actor || !pres.editing) continue;
-              // 90초 넘게 갱신 없는 편집 표시는 죽은 것으로 보고 무시(잠금 영구화 방지)
-              const at = pres.at ? Date.parse(pres.at) : nowMs;
-              if (nowMs - at > 90000) continue;
-              editor = { actor: pres.actor, label: pres.editing, at: pres.at };
+            // 같은 사람의 기록이 여러 개 쌓일 수 있으므로 "가장 최근 것"만 현재 상태로 본다.
+            // (지난 기록을 그대로 보면 편집을 끝내도 잠금이 안 풀린다)
+            let latest = null;
+            for (const pres of st[key] || []) {
+              if (!pres || pres.actor === app.space.actor) continue;
+              if (!latest || String(pres.at || '') > String(latest.at || '')) latest = pres;
             }
+            if (!latest || !latest.editing) continue;
+            // 90초 넘게 갱신 없는 편집 표시는 죽은 것으로 보고 무시(잠금 영구화 방지)
+            const at = latest.at ? Date.parse(latest.at) : nowMs;
+            if (nowMs - at > 90000) continue;
+            editor = { actor: latest.actor, label: latest.editing, at: latest.at };
           }
         } catch { /* presence 미지원 시 잠금 없이 동작 */ }
         const before = `${app.remoteEditor?.actor || ''}|${app.remoteEditor?.label || ''}`;
@@ -1073,17 +1086,33 @@
           if (app.tab === 'logs') loadLogs().catch(() => {});
         })
       .subscribe(async status => {
-        if (status === 'SUBSCRIBED') { setSync('실시간 연결됨', 'ok'); await trackPresence(); }
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (status === 'SUBSCRIBED') {
+          app.rtRetry = 0;
+          setSync('실시간 연결됨', 'ok');
+          app.lastPresence = '';        // 새 채널에는 내 편집 상태를 다시 알린다
+          await trackPresence();
+          syncPresence();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           setSync('실시간 끊김 — 주기 확인으로 전환', 'warn');
+          // 채널이 안 붙으면 동시편집 감지가 죽으므로 몇 번 다시 붙여 본다
+          if ((app.rtRetry = (app.rtRetry || 0) + 1) <= 3) {
+            setTimeout(() => { if (app.space && app.online) startRealtime(); }, 3000 * app.rtRetry);
+          }
         }
         requestRender();
       });
+
+    // 디버그 훅(테스트 전용) — presence 상태 확인용
+    window.__cloverDebug = () => ({
+      openRow: app.openRow, lastPresence: app.lastPresence, remoteEditor: app.remoteEditor,
+      presence: (() => { try { return app.channel?.presenceState?.(); } catch { return 'ERR'; } })()
+    });
 
     // Realtime 이 끊겨도 데이터가 밀리지 않도록 하는 백업 경로
     clearInterval(app.pollTimer);
     app.pollTimer = setInterval(() => {
       if (!app.online || app.busy) return;
+      syncPresence();   // 방송이 실패로 밀렸으면 여기서 다시 시도한다
       readSpace({ quiet: true }).catch(() => {
         setSync('연결 확인 중', 'warn');
         requestRender();
@@ -1097,26 +1126,37 @@
     app.pollTimer = null;
   }
 
-  /* 내가 지금 무엇을 편집 중인지 상대에게 알린다. 편집을 닫으면 editing=null 로 잠금 해제. */
+  /* 내가 지금 무엇을 편집 중인지 상대에게 알린다. 편집을 닫으면 editing=null 로 잠금 해제.
+     성공 여부를 돌려주어, 실패하면 다음 render 에서 다시 시도하게 한다. */
   async function trackPresence() {
-    if (!app.channel) return;
+    if (!app.channel) return false;
     const kind = app.openRow ? String(app.openRow).split(':')[0] : '';
     const editing = kind ? (ENTITY_LABEL[kind] || '항목') : null;
     try {
-      await app.channel.track({
-        actor: app.space?.actor, device: app.device.id,
-        editing, at: new Date().toISOString()
-      });
-    } catch { /* presence 미지원 환경은 잠금 없이 진행 */ }
+      // 채널이 덜 붙었을 때 track 이 영영 안 끝나는 경우가 있어 시간 제한을 둔다.
+      // 제한을 넘기면 실패로 보고 다음 주기에 다시 시도한다(잠금 방송이 멈추지 않게).
+      const res = await Promise.race([
+        app.channel.track({
+          actor: app.space?.actor, device: app.device.id,
+          editing, at: new Date().toISOString()
+        }),
+        new Promise(r => setTimeout(() => r('timeout'), 5000))
+      ]);
+      return res === 'ok' || res === undefined;
+    } catch { return false; }   // presence 미지원 환경은 잠금 없이 진행
   }
 
-  /* 편집 상태가 바뀌었을 때만 presence 를 다시 방송한다(render 마다 호출해도 안전). */
+  /* 편집 상태가 바뀌었을 때만 presence 를 다시 방송한다(render 마다 호출해도 안전).
+     방송에 성공했을 때만 기준값을 옮겨, 실패한 방송이 조용히 유실되지 않게 한다. */
   function syncPresence() {
     const kind = app.openRow ? String(app.openRow).split(':')[0] : '';
     const sig = kind || '';
-    if (sig === app.lastPresence) return;
-    app.lastPresence = sig;
-    trackPresence().catch(() => {});
+    if (sig === app.lastPresence || app.presenceBusy) return;
+    app.presenceBusy = true;
+    trackPresence()
+      .then(ok => { if (ok) app.lastPresence = sig; })
+      .catch(() => {})
+      .finally(() => { app.presenceBusy = false; });
   }
 
   window.addEventListener('online', async () => {
@@ -1429,7 +1469,7 @@
         <div class="sv-col ${id} ${open ? 'open' : ''}">
           <button type="button" class="sv-col-head" data-home-open="sv:${id}">
             <span class="sv-col-title">${title}<i>${list.length}개</i></span>
-            <b>${won(total)} ${icon(open ? 'chevron' : 'chevron', 15)}</b>
+            <b>${won(total)} ${icon('chevron', 15)}</b>
           </button>
           ${open ? `<p class="note">${desc}</p>${rows(list)}` : ''}
         </div>`;
@@ -1458,11 +1498,10 @@
   /* 홈 상단 그래프 — 최근 몇 달의 수입·지출·적금을 묶음 막대로.
      전체보기를 누르면 크게, 12개월로 본다. app.chartBig 로 상태를 둔다. */
   function monthlyStats(month) {
-    const income = incomeTotal(month);
-    const expense = fixedTotal(month) + utilityTotal(month)
-      + personalBudget(month) + sharedSpend(month);
-    const saving = savingTotal(month);
-    return { income, expense, saving };
+    // 그래프의 "지출"도 카드 총지출과 같은 기준(잔여 포함)으로 맞춘다.
+    // 그러지 않으면 같은 홈에서 지출 숫자가 두 개로 어긋난다.
+    const s = summary(month);
+    return { income: s.income, expense: s.expense, saving: s.saving };
   }
 
   /* 만원 단위 라벨. 0이면 빈칸(막대 라벨이 지저분해지지 않게). */
@@ -1554,8 +1593,11 @@
     const s = summary();
     const sharedUsed = s.spend;
     const sharedLeft = s.sharedBudget - sharedUsed;
-    const sharedRate = s.sharedBudget > 0 ? Math.round((sharedUsed / s.sharedBudget) * 100) : 0;
-    const over = s.sharedBudget > 0 && sharedUsed > s.sharedBudget;
+    // 예산이 0원이어도 쓴 게 있으면 "초과"로 본다(예산 미설정 시 남음 오표기 방지)
+    const over = sharedUsed > s.sharedBudget;
+    const sharedRate = s.sharedBudget > 0
+      ? Math.round((sharedUsed / s.sharedBudget) * 100)
+      : (sharedUsed > 0 ? 100 : 0);
 
     return `
       <section class="page">
@@ -1582,10 +1624,15 @@
         </article>
 
         <div class="hero">
-          <div class="hero-item">
-            <small>이번 달 남는 금액</small>
-            <strong class="${s.remaining < 0 ? 'minus' : ''}">${won(s.remaining)}</strong>
-            <small>총수입 − 적금·저축 − 총지출</small>
+          <div class="hero-item ${s.residual > 0 ? 'clickable' : ''}"
+               ${s.residual > 0 ? 'data-home-open="flow"' : ''}>
+            <small>${s.remaining < 0 ? '이번 달 적자' : '이번 달 남는 금액'}</small>
+            <strong class="${s.remaining < 0 ? 'minus' : ''}">${won(Math.abs(s.remaining))}</strong>
+            <small>${s.remaining < 0
+              ? '총지출이 수입−적금을 넘었습니다'
+              : s.residual > 0
+                ? `잔여 ${won(s.residual)}는 지출로 집계됨`
+                : '총수입 − 적금·저축 − 총지출'}</small>
           </div>
           <button class="hero-item" type="button" data-goto="assets">
             <small>현재 순자산</small>
@@ -1641,7 +1688,7 @@
         <button type="button" class="card-head flow-toggle" data-home-open="flow">
           <h3>이번 달 돈의 흐름</h3>
           <span class="fold-hint">${open ? '접기' : '자세히'}
-            ${icon(open ? 'chevron' : 'chevron', 16)}</span>
+            ${icon('chevron', 16)}</span>
         </button>
 
         <div class="flow-stages">
@@ -1900,7 +1947,8 @@
             <span class="brief-main">
               <b>${esc(x.name)}</b>
               ${opts.owner ? ownerTag(x.owner) : ''}
-              ${bal !== null ? `<small class="bal">모인 돈 ${won(bal)}</small>`
+              ${kind === 'income' ? `<small>매월 ${num(x.payday) || 25}일 입금${x.memo ? ` · ${esc(x.memo)}` : ''}</small>`
+                : bal !== null ? `<small class="bal">모인 돈 ${won(bal)}</small>`
                 : x.memo ? `<small>${esc(x.memo)}</small>` : ''}
             </span>
             <span class="brief-amount">${won(value)}</span>
@@ -1918,6 +1966,9 @@
             <input name="from" type="month" value="${esc(applied)}"></label>
           <label class="field"><span>${opts.amountLabel || '월 금액'}</span>
             <input name="amount" inputmode="numeric" value="${value}"></label>
+          ${kind === 'income' ? `
+            <label class="field"><span>월급일(매월 며칠)</span>
+              <input name="payday" inputmode="numeric" value="${num(x.payday) || 25}"></label>` : ''}
           ${kind === 'saving' ? `
             <label class="field"><span>지금까지 모인 돈</span>
               <input name="startBalance" inputmode="numeric" value="${num(x.startBalance)}"></label>
@@ -2017,7 +2068,7 @@
           <label class="field"><span>기록할 달</span>
             <input name="from" type="month" value="${esc(applied)}"></label>
           <label class="field"><span>그 달 잔액</span>
-            <input name="amount" inputmode="numeric" value="${value}"></label>
+            <input name="amount" inputmode="numeric" value="${historyValue(x.history, app.month)}"></label>
           <label class="field"><span>매월 자동 증가액</span>
             <input name="monthlyAdd" inputmode="numeric" value="${num(x.monthlyAdd)}"
                    placeholder="예: 월급 저축분 (없으면 0)"></label>
@@ -2490,9 +2541,22 @@
     const map = {};
     const put = (date, ev) => { (map[date] ||= []).push(ev); };
 
+    const [y, m] = month.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+
+    // 정기소득(월급)은 매월 급여일에 자동으로 들어온다 — 달력에 그날 표시
+    for (const inc of app.state.recurringIncomes) {
+      const amount = historyValue(inc.history, month);
+      if (amount <= 0) continue;
+      const day = Math.min(num(inc.payday) || 25, last);
+      put(`${month}-${pad(day)}`, {
+        type: 'income', source: 'salary', name: inc.name, owner: inc.owner,
+        amount, id: inc.id, memo: '정기소득'
+      });
+    }
     for (const b of app.state.bonuses) {
       if (monthOf(b.date) === month)
-        put(b.date, { type: 'income', name: b.name, owner: b.owner, amount: num(b.amount), id: b.id });
+        put(b.date, { type: 'income', source: 'bonus', name: b.name, owner: b.owner, amount: num(b.amount), id: b.id });
     }
     for (const t of app.state.transactions) {
       if (monthOf(t.date) === month)
@@ -2502,8 +2566,6 @@
         });
     }
     // 자동이체는 매달 같은 날 반복되므로 보고 있는 달에 맞춰 날짜를 만든다
-    const [y, m] = month.split('-').map(Number);
-    const last = new Date(y, m, 0).getDate();
     for (const f of app.state.flows) {
       const day = Math.min(num(f.day) || 1, last);
       put(`${month}-${pad(day)}`, {
@@ -2592,11 +2654,20 @@
             </div>
             ${detail.length ? `<div class="day-list">${detail.map(e => {
               // 생활비·보너스는 눌러서 바로 고칠 수 있게 한다 (자동이체는 흐름도에서 관리)
-              const editable = e.type === 'spend' || e.type === 'income';
-              const attr = editable
-                ? `class="day-item ${e.type} tap" type="button" data-edit-tx="${e.type}:${e.id}" data-longedit="${e.type==='income'?'bonus':'transaction'}:${e.id}"`
-                : `class="day-item ${e.type}"`;
-              const tag = editable ? 'button' : 'div';
+              const isSalary = e.type === 'income' && e.source === 'salary';
+              const editable = e.type === 'spend' || (e.type === 'income' && e.source === 'bonus');
+              let attr, tag = 'div';
+              if (editable) {
+                attr = `class="day-item ${e.type} tap" type="button" data-edit-tx="${e.type}:${e.id}" data-longedit="${e.type==='income'?'bonus':'transaction'}:${e.id}"`;
+                tag = 'button';
+              } else if (isSalary) {
+                // 월급은 정기소득 설정에서 관리 — 탭하면 설정으로 이동
+                attr = `class="day-item income tap" type="button" data-goto="settings:income"`;
+                tag = 'button';
+              } else {
+                attr = `class="day-item ${e.type}"`;
+              }
+              const showArrow = editable || isSalary;
               return `
               <${tag} ${attr}>
                 <div>
@@ -2606,7 +2677,7 @@
                 </div>
                 <b class="${e.type === 'income' ? 'plus' : 'minus'}">
                   ${e.type === 'income' ? '+' : '-'}${won(e.amount)}
-                  ${editable ? icon('chevron', 15) : ''}</b>
+                  ${showArrow ? icon('chevron', 15) : ''}</b>
               </${tag}>`;
             }).join('')}</div>` : emptyRow('이 날짜에는 기록이 없습니다.')}
           </article>` : ''}
@@ -2641,7 +2712,11 @@
       .filter(f => f.fromId === id)
       .sort((a, b) => num(a.day) - num(b.day));
 
+    // 흐름도에 실제로 그려진 통장을 모아, 어느 트리에도 안 걸린 자동이체를 따로 표시한다
+    const shown = new Set();
+
     const box = (acc, total) => {
+      shown.add(acc.id);
       const meta = ACCOUNT_KIND[acc.kind] || ACCOUNT_KIND.spending;
       const cards = cardsOf(acc.id);
       return `
@@ -2702,7 +2777,7 @@
     const starts = roots.filter(a => !receiving.has(a.id));
     const trees = starts.length ? starts : roots;
 
-    return trees.map((root, idx) => {
+    const treeHtml = trees.map((root, idx) => {
       const outs = outgoing(root.id);
       const total = outs.reduce((s, f) => s + num(f.amount), 0);
       // 공동 소득은 어느 통장으로 들어오는지 정해져 있지 않아 첫 통장에만 함께 표시한다
@@ -2723,6 +2798,21 @@
             이 통장에서 매달 나가는 돈 합계 <b>${won(total)}</b></p>` : ''}
         </div>`;
     }).join('');
+
+    // 어느 트리에도 안 그려진 자동이체(출금 통장 미지정 또는 고아 통장) — 합계 불일치 방지
+    const orphanFlows = app.state.flows.filter(f => !shown.has(f.fromId));
+    const orphanHtml = orphanFlows.length ? `
+      <div class="flow-tree orphan">
+        <p class="note">연결되지 않은 자동이체 <small>(출금 통장이 흐름도에 없어 따로 표시)</small></p>
+        ${orphanFlows.sort((a, b) => num(a.day) - num(b.day)).map(f => `
+          <div class="flow-branch orphan-row">
+            <span class="flow-day">매월 ${num(f.day)}일</span>
+            <b>${esc(f.name)}</b>
+            <span class="flow-amount">${won(f.amount)}</span>
+          </div>`).join('')}
+      </div>` : '';
+
+    return treeHtml + orphanHtml;
   }
 
   function accountRows() {
@@ -2942,8 +3032,9 @@
             </div>
           </article>`
         : view === 'all'
-          ? ['현조', '신영', '공동'].map(groupCard).join('')
-          : groupCard(view)}
+          ? (['현조', '신영', '공동'].map(groupCard).join('')
+             || emptyRow('등록된 생활비 예산이 없습니다.'))
+          : (groupCard(view) || emptyRow(`${view} 예산 항목이 없습니다.`))}
       </section>`;
   }
 
@@ -3093,7 +3184,7 @@
     g.font = '700 34px "Noto Sans KR", sans-serif';
     g.fillText('🍀 CLOVER', pad, 60);
     g.font = '400 20px "Noto Sans KR", sans-serif';
-    g.fillText(`${esc(app.space.name || '우리집')} · ${monthLabel(app.month)} 가계 요약`, pad, 98);
+    g.fillText(`${app.space.name || '우리집'} · ${monthLabel(app.month)} 가계 요약`, pad, 98);
     // KPI 4칸
     const kpis = [
       ['총수입', won(s.income), '#18181B'],
@@ -3266,7 +3357,6 @@
   }
 
   function logsView() {
-    const types = [...new Set(app.logs.map(l => l.entity_type))];
     return `
       <section class="page">
         <div class="page-head">
@@ -3435,7 +3525,7 @@
       : '01';
     const defaultDate = `${app.month}-${defaultDay}`;
     const map = {
-      income: { id, name: '새 정기소득', owner: '공동', memo: '', history: h },
+      income: { id, name: '새 정기소득', owner: '공동', memo: '', history: h, payday: 25 },
       fixed: { id, name: '새 고정비', owner: '공동', memo: '', history: h },
       utility: { id, name: '새 공과금', memo: '', estimateHistory: h },
       saving: { id, name: '새 적금', owner: '공동', memo: '', history: h,
@@ -3483,7 +3573,7 @@
           state.transactions.push({
             id: uid(), date: `${month}-${pad(day)}`, owner: r.owner,
             category: r.category, place: r.name, amount: num(r.amount),
-            memo: '반복 지출 자동 생성'
+            memo: '반복 지출 자동 생성', recurringId: r.id
           });
           r.applied = [...(r.applied || []), month];
         }
@@ -3596,6 +3686,9 @@
           x.owner = d.get('owner') || x.owner;
           x.memo = String(d.get('memo') || '').trim();
           setHistory(x.history, d.get('from') || app.month, d.get('amount'));
+          // 정기소득은 월급일을 기록해 달력에 자동 표시한다
+          if (kind === 'income' && d.has('payday'))
+            x.payday = Math.min(28, Math.max(1, num(d.get('payday')) || 25));
           if (kind === 'saving') {
             if (d.has('startBalance')) x.startBalance = num(d.get('startBalance'));
             if (d.get('startMonth')) x.startMonth = String(d.get('startMonth')).slice(0, 7);
@@ -3691,6 +3784,18 @@
           x.owner = d.get('owner') || x.owner;
           x.day = Math.min(28, Math.max(1, num(d.get('day')) || 1));
           x.amount = num(d.get('amount'));
+          // 이미 이번 달에 반영된 반복지출이면, 자동 생성된 그 달 내역도 함께 정정한다
+          if ((x.applied || []).includes(app.month)) {
+            const [my, mm] = app.month.split('-').map(Number);
+            const lastDay = new Date(my, mm, 0).getDate();
+            const gen = state.transactions.find(t =>
+              t.recurringId === x.id && monthOf(t.date) === app.month);
+            if (gen) {
+              gen.owner = x.owner; gen.category = x.category;
+              gen.place = x.name; gen.amount = x.amount;
+              gen.date = `${app.month}-${pad(Math.min(x.day, lastDay))}`;
+            }
+          }
         }
       },
       {
@@ -3953,7 +4058,13 @@
     if (t.closest('[data-back]')) { history.back(); return; }
 
     const shift = t.closest('[data-shift]');
-    if (shift) { app.month = shiftMonth(app.month, num(shift.dataset.shift)); render(); return; }
+    if (shift) {
+      app.month = shiftMonth(app.month, num(shift.dataset.shift));
+      render();
+      // 입력 화면에서 달을 넘기면 그 달 반복지출도 자동 반영한다
+      if (app.tab === 'monthly') applyRecurrings().catch(() => {});
+      return;
+    }
 
     if (t.closest('[data-apply-live]')) { render(); return; }
 
@@ -4101,6 +4212,9 @@
     if (onDate) {
       const date = onDate.dataset.addOnDate;
       const id = uid();
+      // 미저장 롤백 대상(draft)으로 잡고 행을 펼쳐, 값을 안 채우고 떠나면 자동 정리되게 한다
+      app.tab = 'monthly'; app.openRow = `transaction:${id}`;
+      app.draft = { id, kind: 'transaction' };
       await mutate(
         state => {
           state.transactions.push({
@@ -4112,11 +4226,16 @@
           action: 'create', type: 'transaction', id,
           summary: `생활비 내역 ${date} 추가`,
           pick: s => findEntity('transaction', id, s),
-          success: '내역을 추가했습니다. 입력 탭에서 금액을 채워주세요.'
+          success: `${Number(date.slice(8))}일 내역을 만들었습니다. 금액을 채워주세요.`
         }
       );
-      app.tab = 'monthly';
-      render();
+      // 펼친 행으로 이동해 사용처 칸에 커서
+      const row = document.querySelector(`form[data-row="transaction"][data-id="${id}"]`);
+      if (row) {
+        row.classList.add('just-added');
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.querySelector('input[name="place"]')?.focus();
+      }
       return;
     }
 
@@ -4148,7 +4267,7 @@
       const [my, mm] = app.month.split('-').map(Number);
       const lastDay = new Date(my, mm, 0).getDate();
       const date = app.month === currentMonth
-        ? ymd(today()) : `${app.month}-${pad(Math.min(1, lastDay))}`;
+        ? ymd(today()) : `${app.month}-01`;
       app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
       await mutate(
         state => {
@@ -4712,7 +4831,11 @@
       app.tab = 'settings'; app.settingsGroup = kind; app.openRow = `${kind}:${id}`;
     } else if (kind === 'asset') {
       app.tab = 'assets'; app.openRow = `asset:${id}`;
-    } else if (kind === 'transaction' || kind === 'bonus') {
+    } else if (kind === 'transaction') {
+      // 생활비 내역은 평소 접힌 행 → 펼쳐야 편집 폼이 생긴다
+      app.tab = 'monthly'; app.openRow = `transaction:${id}`;
+    } else if (kind === 'bonus') {
+      // 보너스는 폼이 항상 펼쳐져 있어 탭 이동만으로 충분
       app.tab = 'monthly';
     }
     render();

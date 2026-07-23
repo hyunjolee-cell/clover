@@ -1589,6 +1589,18 @@ button.ch-lbl:active { transform: scale(.96); }
 }
 .est-note { color: var(--warn-text); font-weight: 600; }
 
+/* 연결되지 않은 자동이체 --------------------------------------------------- */
+.flow-tree.orphan { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.flow-branch.orphan-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  background: var(--g50); border-radius: 10px; margin-top: 6px; font-size: 14px;
+}
+.flow-branch.orphan-row .flow-day {
+  font-size: 12px; color: var(--g500); flex: none; min-width: 60px;
+}
+.flow-branch.orphan-row b { flex: 1; }
+.flow-branch.orphan-row .flow-amount { font-weight: 700; color: var(--danger-text); }
+
 /* 동시 편집 소프트 잠금 배너 --------------------------------------------- */
 .edit-lock-banner {
   display: flex; align-items: center; justify-content: center; gap: 6px;
