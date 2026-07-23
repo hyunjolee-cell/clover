@@ -4611,6 +4611,14 @@
       if (raw === null) return;
       const amount = num(raw);
       if (amount <= 0) { toast('금액을 올바르게 입력해주세요.'); return; }
+      // 모인 돈보다 많이 꺼낼 수는 없다.
+      // 그대로 두면 잔액이 조용히 0으로 눌려, 있지도 않은 인출 기록만 남는다.
+      if (amount > bal) {
+        toast(bal > 0
+          ? `모인 돈 ${won(bal)}보다 많이 꺼낼 수 없습니다.`
+          : '아직 모인 돈이 없어 꺼낼 수 없습니다.');
+        return;
+      }
       const memo = prompt('어디에 쓰셨는지 적어두시겠습니까? (건너뛰려면 확인)') || '';
       const wid = uid();
       await mutate(
