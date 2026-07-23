@@ -1127,12 +1127,6 @@
         requestRender();
       });
 
-    // 디버그 훅(테스트 전용) — presence 상태 확인용
-    window.__cloverDebug = () => ({
-      openRow: app.openRow, lastPresence: app.lastPresence, remoteEditor: app.remoteEditor,
-      presence: (() => { try { return app.channel?.presenceState?.(); } catch { return 'ERR'; } })()
-    });
-
     // Realtime 이 끊겨도 데이터가 밀리지 않도록 하는 백업 경로
     clearInterval(app.pollTimer);
     app.pollTimer = setInterval(() => {
