@@ -109,6 +109,11 @@
     const [y, n] = String(m).split('-');
     return `${y}년 ${Number(n)}월`;
   };
+  /* 상단에 작게 띄우는 현재 날짜·시간. 예) 7월 23일 (수) 09:41 */
+  const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+  const nowLabel = (d = new Date()) =>
+    `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAY[d.getDay()]}) ` +
+    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const shiftMonth = (m, delta) => {
     const [y, n] = String(m).split('-').map(Number);
     const d = new Date(y, n - 1 + delta, 1);
@@ -430,6 +435,8 @@
       x.memo ||= '';
       x.monthlyAdd = num(x.monthlyAdd);                   // 매월 자동으로 더해지는 금액(단순 누적)
       x.addFrom = String(x.addFrom || monthOf(x.asOf) || currentMonth).slice(0, 7);
+      // 적립일: 이 날이 지나야 그달 증가분이 자산에 쌓인다(기본 25일=보통 월급날)
+      x.addDay = Math.min(28, Math.max(1, num(x.addDay) || 25));
       if (!Array.isArray(x.history) || !x.history.length) {
         x.history = [{ from: monthOf(x.asOf) || currentMonth, amount: num(x.amount) }];
       }
@@ -545,6 +552,7 @@
     lastPresence: '',      // 마지막으로 방송에 성공한 내 편집 상태 (중복 방송 방지)
     presenceBusy: false,   // presence 방송 진행 중 (중복 호출 방지)
     rtRetry: 0,            // 실시간 채널 재연결 시도 횟수
+    reportPicks: {},       // 월별 리포트에 함께 담을 상세 내역 선택
     undoStack: [],         // 되돌리기용 직전 상태 (최근 20건)
     expanded: new Set(),   // 로그 전후값 펼침
     channel: null,
@@ -615,15 +623,29 @@
     }
     return e;
   }
-  const assetAt = (a, month = app.month) => {
-    // 매월 자동 증가액을 시작 다음 달부터 그달까지 단순 누적(복리 아님).
-    // 시작월(addFrom)에 적은 "그 달 잔액"이 이미 그 시점의 실제 잔액이므로,
-    // 그 달에는 증가분을 더하지 않고 다음 달부터 한 달치씩 얹는다(적금 잔액과 동일 규칙).
-    let add = 0;
-    const add1 = num(a.monthlyAdd);
-    if (add1 && a.addFrom && String(month) > String(a.addFrom)) {
-      add = add1 * monthsBetween(a.addFrom, month);
+  /* 자산의 매월 자동 증가액이 몇 번 쌓였는지 센다.
+     핵심 원칙: "발생해야 적재된다" — 적립일(기본 25일, 보통 월급날)이 실제로 지난 회차만 센다.
+     아직 오지 않은 이번 달 적립분을 미리 더하면 없는 돈이 자산으로 잡히기 때문이다.
+     project=true 는 미래 예상(추이·포캐스팅)용으로, 도래 여부와 무관하게 전부 센다. */
+  function addOccurrences(a, month, project) {
+    if (!a.addFrom || String(month) <= String(a.addFrom)) return 0;
+    let n = monthsBetween(a.addFrom, month);
+    if (project) return n;
+    const todayStr = ymd(today());
+    const day = Math.min(28, Math.max(1, num(a.addDay) || 25));
+    while (n > 0) {
+      const occ = shiftMonth(a.addFrom, n);                 // n번째 적립이 일어나는 달
+      const [oy, om] = occ.split('-').map(Number);
+      const lastD = new Date(oy, om, 0).getDate();
+      if (`${occ}-${pad(Math.min(day, lastD))}` <= todayStr) break;   // 도래한 회차를 찾음
+      n--;                                                  // 아직 안 온 회차는 빼고 다시 확인
     }
+    return n;
+  }
+  const assetAt = (a, month = app.month, project = false) => {
+    // 시작월(addFrom)에 적은 "그 달 잔액"이 이미 그 시점의 실제 잔액이므로
+    // 그 달에는 증가분을 더하지 않고, 다음 달부터 적립일이 지난 만큼만 얹는다.
+    const add = num(a.monthlyAdd) * addOccurrences(a, month, project);
     return historyValue(a.history, month) + add + bigSpendEffect(a.id, month);
   };
   /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다 */
@@ -644,23 +666,26 @@
   const savingBalanceTotal = (month = app.month) =>
     app.state.savings.reduce((s, sv) => s + savingBalance(sv, month), 0);
 
-  const assetTotal = (month = app.month) =>
+  const assetTotal = (month = app.month, project = false) =>
     app.state.assets.filter(a => a.kind === 'asset')
-      .reduce((s, a) => s + assetAt(a, month), 0);
-  const debtTotal = (month = app.month) =>
+      .reduce((s, a) => s + assetAt(a, month, project), 0);
+  const debtTotal = (month = app.month, project = false) =>
     app.state.assets.filter(a => a.kind === 'debt')
-      .reduce((s, a) => s + assetAt(a, month), 0);
+      .reduce((s, a) => s + assetAt(a, month, project), 0);
   /* 순자산 = 등록 자산 + 모아 둔 적금 − 부채 */
-  const netAssets = (month = app.month) =>
-    assetTotal(month) + savingBalanceTotal(month) - debtTotal(month);
+  const netAssets = (month = app.month, project = false) =>
+    assetTotal(month, project) + savingBalanceTotal(month) - debtTotal(month, project);
 
-  /* 최근 N개월 순자산 추이 */
+  /* 최근 N개월 순자산 추이.
+     아직 오지 않은 달은 "예상"으로 표시되므로 자동 증가분을 미리 반영해 보여 준다.
+     지난 달과 이번 달은 실제로 적립일이 지난 만큼만 센다. */
   function netAssetSeries(months = 12, endMonth = app.month) {
     const out = [];
     for (let i = months - 1; i >= 0; i--) {
       const m = shiftMonth(endMonth, -i);
-      out.push({ month: m, asset: assetTotal(m) + savingBalanceTotal(m),
-                 debt: debtTotal(m), net: netAssets(m) });
+      const project = String(m) > currentMonth;
+      out.push({ month: m, asset: assetTotal(m, project) + savingBalanceTotal(m),
+                 debt: debtTotal(m, project), net: netAssets(m, project) });
     }
     return out;
   }
@@ -1747,8 +1772,14 @@
   function recurringRows() {
     if (!app.state.recurrings.length)
       return emptyRow('등록된 반복 지출이 없습니다. 매달 나가는 구독료·용돈 등을 넣어보세요.');
+    const [ry, rm] = app.month.split('-').map(Number);
+    const rLast = new Date(ry, rm, 0).getDate();
+    const rToday = ymd(today());
     return app.state.recurrings.map(x => {
       const applied = (x.applied || []).includes(app.month);
+      // 예정일이 아직 안 왔으면 "미반영"이 아니라 "예정"으로 알린다
+      const dueDate = `${app.month}-${pad(Math.min(x.day || 1, rLast))}`;
+      const pending = !applied && dueDate > rToday;
       return `
         <form class="item" data-row="recurring" data-id="${x.id}">
           <label class="field"><span>항목명</span><input name="name" value="${esc(x.name)}"></label>
@@ -1768,7 +1799,9 @@
           </div>
           <div class="wide">
             <small class="${applied ? 'plus' : 'note'}">${
-              applied ? `${monthLabel(app.month)}에 이미 반영됨` : `${monthLabel(app.month)}에 아직 미반영`}</small>
+              applied ? `${monthLabel(app.month)}에 이미 반영됨`
+              : pending ? `${Number(dueDate.slice(8))}일 예정 — 그날 자동으로 기록됩니다`
+              : `${monthLabel(app.month)}에 아직 미반영`}</small>
           </div>
         </form>`;
     }).join('');
@@ -2074,6 +2107,9 @@
                    placeholder="예: 월급 저축분 (없으면 0)"></label>
           <label class="field"><span>증가 시작월</span>
             <input name="addFrom" type="month" value="${esc(x.addFrom || applied)}"></label>
+          <label class="field"><span>적립일(매월 며칠)</span>
+            <input name="addDay" inputmode="numeric" value="${num(x.addDay) || 25}"
+                   placeholder="이 날이 지나야 쌓입니다"></label>
           <label class="field wide"><span>메모</span>
             <input name="memo" value="${esc(x.memo)}"></label>
           <div class="item-actions">
@@ -2536,20 +2572,27 @@
   /* --- 15-A. 화면: 달력 --------------------------------------------------- */
 
   /* 그 달에 실제로 돈이 오간 날을 한눈에 보기 위한 화면.
-     수입(보너스)·지출(생활비)·자동이체를 날짜별로 모은다. */
+     수입(보너스)·지출(생활비)·자동이체를 날짜별로 모은다.
+
+     자동으로 생기는 항목(월급·자동이체)은 "아직 오지 않은 날"에는 표시하지 않는다.
+     달력은 실제로 돈이 오간 기록을 보는 곳이므로, 예정일이 지나야 그날 찍힌다. */
   function dayEvents(month) {
     const map = {};
     const put = (date, ev) => { (map[date] ||= []).push(ev); };
 
     const [y, m] = month.split('-').map(Number);
     const last = new Date(y, m, 0).getDate();
+    const todayStr = ymd(today());
+    const arrived = date => String(date) <= todayStr;   // 오늘까지만 실제 발생으로 본다
 
-    // 정기소득(월급)은 매월 급여일에 자동으로 들어온다 — 달력에 그날 표시
+    // 정기소득(월급)은 매월 급여일에 자동으로 들어온다 — 급여일이 지나야 표시
     for (const inc of app.state.recurringIncomes) {
       const amount = historyValue(inc.history, month);
       if (amount <= 0) continue;
       const day = Math.min(num(inc.payday) || 25, last);
-      put(`${month}-${pad(day)}`, {
+      const date = `${month}-${pad(day)}`;
+      if (!arrived(date)) continue;
+      put(date, {
         type: 'income', source: 'salary', name: inc.name, owner: inc.owner,
         amount, id: inc.id, memo: '정기소득'
       });
@@ -2565,10 +2608,13 @@
           amount: num(t.amount), memo: t.category, id: t.id
         });
     }
-    // 자동이체는 매달 같은 날 반복되므로 보고 있는 달에 맞춰 날짜를 만든다
+    // 자동이체는 매달 같은 날 반복되므로 보고 있는 달에 맞춰 날짜를 만든다.
+    // 이것도 자동 발생분이라 이체일이 지나야 달력에 찍는다.
     for (const f of app.state.flows) {
       const day = Math.min(num(f.day) || 1, last);
-      put(`${month}-${pad(day)}`, {
+      const date = `${month}-${pad(day)}`;
+      if (!arrived(date)) continue;
+      put(date, {
         type: 'transfer', name: f.name, amount: num(f.amount), id: f.id,
         memo: accountName(f.fromId) + (f.toId ? ` → ${accountName(f.toId)}` : '')
       });
@@ -3121,7 +3167,39 @@
   }
 
   /* --- 15-C-3. 화면: 월별 리포트 ------------------------------------------ */
-  /* 이번 달 요약을 한 장으로. 인쇄(PDF 저장)와 이미지(PNG) 내보내기를 제공한다. */
+
+  /* 리포트에 함께 담을 수 있는 상세 내역들.
+     [키, 제목, 그달 항목을 [이름, 금액] 배열로 뽑는 함수] */
+  const REPORT_SECTIONS = [
+    ['income', '정기소득 상세', m => app.state.recurringIncomes
+      .map(x => [x.name, historyValue(x.history, m)]).filter(r => r[1])],
+    ['bonus', '보너스·상여금 내역', m => bonusesOf(m)
+      .map(x => [`${String(x.date).slice(5).replace('-', '/')} ${x.name}`, num(x.amount)])],
+    ['fixed', '월 고정비 상세', m => app.state.fixedCosts
+      .map(x => [x.name, historyValue(x.history, m)]).filter(r => r[1])],
+    ['utility', '공과금 상세', m => app.state.utilities
+      .map(x => [x.name, utilityAmount(x, m)]).filter(r => r[1])],
+    ['saving', '적금·저축 상세', m => app.state.savings
+      .map(x => [x.name, historyValue(x.history, m)]).filter(r => r[1])],
+    ['budget', '생활비 예산 상세', m => app.state.budgets
+      .map(x => [`${x.name} (${x.owner})`, historyValue(x.history, m)]).filter(r => r[1])],
+    ['spend', '공동 생활비 사용내역', m => transactionsOf(m)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map(t => [`${String(t.date).slice(5).replace('-', '/')} ${t.place || t.category}`, num(t.amount)])],
+    ['recurring', '반복 지출', () => app.state.recurrings
+      .map(r => [`매월 ${num(r.day)}일 ${r.name}`, num(r.amount)]).filter(r => r[1])],
+    ['asset', '자산·부채 목록', m => app.state.assets
+      .map(a => [`${a.name}${a.kind === 'debt' ? ' (부채)' : ''}`, assetAt(a, m)]).filter(r => r[1])]
+  ];
+
+  /* 체크된 상세 내역만 뽑아 준다. 화면·이미지·PDF가 모두 이 결과를 함께 쓴다. */
+  function reportDetailSections(month = app.month) {
+    return REPORT_SECTIONS
+      .filter(([key]) => app.reportPicks[key])
+      .map(([, title, pick]) => ({ title, rows: pick(month) || [] }));
+  }
+
+  /* 이번 달 요약을 한 장으로. PDF·이미지 내보내기와 인쇄를 제공한다. */
   function reportView() {
     const s = summary();
     const rows = [
@@ -3159,32 +3237,74 @@
               `<div class="${k.startsWith('  ') ? 'sub' : ''}"><span>${esc(k.trim())}</span>
                 <b class="${cls}">${v}</b></div>`).join('')}
           </div>
+          ${reportDetailSections().map(sec => `
+            <div class="report-detail">
+              <h4>${esc(sec.title)}</h4>
+              ${sec.rows.length ? sec.rows.map(([k, v]) => `
+                <div><span>${esc(k)}</span><b>${won(v)}</b></div>`).join('')
+                : '<div class="none"><span>내역이 없습니다</span></div>'}
+            </div>`).join('')}
           <div class="report-foot">저축률 ${s.savingRate.toFixed(1)}% ·
             생성 ${new Date().toISOString().slice(0, 10)}</div>
         </article>
 
+        <article class="card">
+          <div class="card-head"><h3>리포트에 넣을 상세 내역</h3>
+            <span class="note">체크한 항목이 화면·PDF·이미지에 함께 담깁니다</span></div>
+          <div class="report-picks">
+            ${REPORT_SECTIONS.map(([key, title]) => `
+              <label class="pick">
+                <input type="checkbox" data-report-pick="${key}"
+                       ${app.reportPicks[key] ? 'checked' : ''}>
+                <span>${esc(title)}</span>
+              </label>`).join('')}
+          </div>
+        </article>
+
         <div class="row" style="gap:8px">
-          <button class="primary" type="button" data-report-print>인쇄 · PDF로 저장</button>
+          <button class="primary" type="button" data-report-pdf>PDF로 저장</button>
           <button class="secondary" type="button" data-report-image>이미지로 저장</button>
+          <button class="ghost" type="button" data-report-print>인쇄</button>
         </div>
       </section>`;
   }
 
-  /* 리포트를 PNG 이미지로 저장. 요약 값을 canvas에 직접 그린다(외부 라이브러리 없이). */
-  function exportReportImage() {
+  /* 리포트를 캔버스 한 장으로 그린다. 화면에서 고른 상세 내역까지 함께 담고,
+     내용 길이에 맞춰 높이를 계산하므로 항목을 많이 골라도 잘리지 않는다.
+     이미지 저장과 PDF 저장이 모두 이 캔버스를 쓴다(한글은 그림이라 폰트 문제 없음). */
+  function renderReportCanvas() {
     const s = summary();
-    const W = 720, H = 1000, pad = 48;
+    const details = reportDetailSections();
+    const W = 760, pad = 52;
+    const HEAD = 132, KPI = 210, ROW = 44, SEC_HEAD = 52, FOOT = 90;
+
+    const sumRows = [
+      ['정기소득', won(s.base)], ['보너스·상여금', won(s.bonus)],
+      ['적금·저축', `-${won(s.saving)}`], ['월 고정비', `-${won(s.fixed)}`],
+      ['공과금', `-${won(s.utility)}`], ['개인 생활비', `-${won(s.personal)}`],
+      ['공동 생활비', `-${won(s.spend)}`],
+      ...(s.residual > 0 ? [['잔여(미분류)', `-${won(s.residual)}`]] : []),
+      ['남는 금액', won(s.remaining)]
+    ];
+
+    // 필요한 높이를 먼저 계산한다
+    let H = HEAD + KPI + 40 + sumRows.length * ROW + 30;
+    for (const sec of details) H += SEC_HEAD + Math.max(1, sec.rows.length) * ROW + 18;
+    H += FOOT;
+
     const cv = document.createElement('canvas');
-    cv.width = W; cv.height = H;
+    cv.width = W; cv.height = Math.max(700, H);
     const g = cv.getContext('2d');
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, cv.height);
+
     // 헤더 띠 (앱 블루 톤)
-    g.fillStyle = '#2F58B8'; g.fillRect(0, 0, W, 132);
+    g.fillStyle = '#2F58B8'; g.fillRect(0, 0, W, HEAD);
     g.fillStyle = '#ffffff';
     g.font = '700 34px "Noto Sans KR", sans-serif';
-    g.fillText('🍀 CLOVER', pad, 60);
+    g.fillText('CLOVER', pad, 58);
     g.font = '400 20px "Noto Sans KR", sans-serif';
-    g.fillText(`${app.space.name || '우리집'} · ${monthLabel(app.month)} 가계 요약`, pad, 98);
+    g.fillText(`${app.space.name || '우리집'} · ${monthLabel(app.month)} 가계 요약`, pad, 96);
+
     // KPI 4칸
     const kpis = [
       ['총수입', won(s.income), '#18181B'],
@@ -3192,42 +3312,133 @@
       ['적금·저축', won(s.saving), '#2F58B8'],
       ['현재 순자산', won(netAssets()), '#1F6B4D']
     ];
-    let ky = 200;
     kpis.forEach((k, i) => {
       const col = i % 2, rowi = Math.floor(i / 2);
-      const bx = pad + col * ((W - pad * 2) / 2), by = ky + rowi * 96;
-      g.fillStyle = '#64748b'; g.font = '400 16px "Noto Sans KR", sans-serif';
+      const bx = pad + col * ((W - pad * 2) / 2), by = HEAD + 60 + rowi * 92;
+      g.fillStyle = '#78787F'; g.font = '400 16px "Noto Sans KR", sans-serif';
       g.fillText(k[0], bx, by);
       g.fillStyle = k[2]; g.font = '700 28px "Noto Sans KR", sans-serif';
       g.fillText(k[1], bx, by + 34);
     });
-    // 구분선
-    g.strokeStyle = '#e2e8f0'; g.beginPath(); g.moveTo(pad, 420); g.lineTo(W - pad, 420); g.stroke();
-    // 상세 행
-    const rows = [
-      ['정기소득', won(s.base)], ['보너스·상여금', won(s.bonus)],
-      ['적금·저축', `−${won(s.saving)}`], ['월 고정비', `−${won(s.fixed)}`],
-      ['공과금', `−${won(s.utility)}`], ['개인 생활비', `−${won(s.personal)}`],
-      ['공동 생활비', `−${won(s.spend)}`],
-      ...(s.residual > 0 ? [['잔여(미분류)', `−${won(s.residual)}`]] : []),
-      ['남는 금액', won(s.remaining)]
-    ];
-    let ry = 470;
-    rows.forEach(([k, v]) => {
-      g.fillStyle = '#334155'; g.font = '400 19px "Noto Sans KR", sans-serif';
-      g.fillText(k, pad, ry);
-      g.textAlign = 'right'; g.fillStyle = '#0f172a'; g.font = '600 19px "Noto Sans KR", sans-serif';
-      g.fillText(v, W - pad, ry); g.textAlign = 'left';
-      ry += 46;
-    });
+
+    let y = HEAD + KPI + 30;
+    g.strokeStyle = '#E9E9EC'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(pad, y - 18); g.lineTo(W - pad, y - 18); g.stroke();
+
+    // 요약 행
+    const line = (label, value, bold) => {
+      g.fillStyle = '#3D3D42'; g.font = `400 19px "Noto Sans KR", sans-serif`;
+      g.fillText(label, pad, y);
+      g.textAlign = 'right';
+      g.fillStyle = '#18181B'; g.font = `${bold ? 700 : 600} 19px "Noto Sans KR", sans-serif`;
+      g.fillText(value, W - pad, y);
+      g.textAlign = 'left';
+      y += ROW;
+    };
+    sumRows.forEach(([k, v], i) => line(k, v, i === sumRows.length - 1));
+
+    // 고른 상세 내역
+    for (const sec of details) {
+      y += 16;
+      g.fillStyle = '#2F58B8'; g.font = '700 20px "Noto Sans KR", sans-serif';
+      g.fillText(sec.title, pad, y);
+      y += 14;
+      g.strokeStyle = '#E9E9EC';
+      g.beginPath(); g.moveTo(pad, y); g.lineTo(W - pad, y); g.stroke();
+      y += 30;
+      if (!sec.rows.length) {
+        g.fillStyle = '#A8A8AE'; g.font = '400 17px "Noto Sans KR", sans-serif';
+        g.fillText('내역이 없습니다', pad, y);
+        y += ROW;
+      } else {
+        for (const [k, v] of sec.rows) {
+          g.fillStyle = '#56565C'; g.font = '400 17px "Noto Sans KR", sans-serif';
+          // 이름이 길면 잘라서 금액과 겹치지 않게 한다
+          let label = String(k);
+          while (g.measureText(label).width > W - pad * 2 - 170 && label.length > 4) {
+            label = label.slice(0, -2);
+          }
+          if (label !== String(k)) label += '…';
+          g.fillText(label, pad, y);
+          g.textAlign = 'right'; g.fillStyle = '#27272A';
+          g.font = '600 17px "Noto Sans KR", sans-serif';
+          g.fillText(won(v), W - pad, y); g.textAlign = 'left';
+          y += ROW;
+        }
+      }
+    }
+
     // 푸터
-    g.fillStyle = '#94a3b8'; g.font = '400 15px "Noto Sans KR", sans-serif';
-    g.fillText(`저축률 ${s.savingRate.toFixed(1)}% · 생성 ${new Date().toISOString().slice(0, 10)}`, pad, H - 40);
-    // 다운로드
-    const url = cv.toDataURL('image/png');
+    g.fillStyle = '#A8A8AE'; g.font = '400 15px "Noto Sans KR", sans-serif';
+    g.fillText(`저축률 ${s.savingRate.toFixed(1)}% · 생성 ${nowLabel()}`, pad, cv.height - 34);
+    return cv;
+  }
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `clover-${app.month}.png`;
+    a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  /* 리포트를 PNG 이미지로 저장 */
+  function exportReportImage() {
+    const cv = renderReportCanvas();
+    cv.toBlob(blob => {
+      if (blob) downloadBlob(blob, `clover-${app.month}.png`);
+      else toast('이미지를 만들지 못했습니다.');
+    }, 'image/png');
+  }
+
+  /* 리포트를 진짜 PDF 파일로 저장.
+     브라우저 인쇄창은 기기에 따라 PDF 저장이 없어서, 캔버스를 JPEG로 만든 뒤
+     PDF 구조를 직접 조립해 내려받는다. 외부 라이브러리 없이 동작한다. */
+  function exportReportPdf() {
+    const cv = renderReportCanvas();
+    const dataUrl = cv.toDataURL('image/jpeg', 0.92);
+    const b64 = dataUrl.split(',')[1];
+    const bin = atob(b64);
+    const jpg = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) jpg[i] = bin.charCodeAt(i);
+
+    // A4 폭(595pt)에 맞추고 높이는 이미지 비율대로
+    const pw = 595.28, ph = +(pw * cv.height / cv.width).toFixed(2);
+    const enc = new TextEncoder();
+    const parts = [];          // 조각들(문자열 또는 바이트)
+    let len = 0;
+    const offsets = [];
+    const push = chunk => {
+      const bytes = typeof chunk === 'string' ? enc.encode(chunk) : chunk;
+      parts.push(bytes); len += bytes.length;
+    };
+    const obj = (n, body) => { offsets[n] = len; push(`${n} 0 obj\n${body}\nendobj\n`); };
+
+    push('%PDF-1.4\n');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw.toFixed(2)} ${ph}] ` +
+           `/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+    // 이미지 객체 (JPEG 원본을 그대로 넣는다)
+    offsets[4] = len;
+    push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${cv.width} /Height ${cv.height} ` +
+         `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);
+    push(jpg);
+    push('\nendstream\nendobj\n');
+    const content = `q ${pw.toFixed(2)} 0 0 ${ph} 0 0 cm /Im0 Do Q\n`;
+    obj(5, `<< /Length ${enc.encode(content).length} >>\nstream\n${content}endstream`);
+
+    const xrefAt = len;
+    let xref = `xref\n0 6\n0000000000 65535 f \n`;
+    for (let i = 1; i <= 5; i++) xref += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+    push(xref);
+    push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
+
+    const out = new Uint8Array(len);
+    let at = 0;
+    for (const b of parts) { out.set(b, at); at += b.length; }
+    downloadBlob(new Blob([out], { type: 'application/pdf' }), `clover-${app.month}.pdf`);
+    toast('PDF를 저장했습니다.');
   }
 
   /* --- 15-C-2. 화면: 특이사항 메모 ---------------------------------------- */
@@ -3447,7 +3658,8 @@
           <div class="brand">
             ${sub ? `<button class="back" type="button" data-back aria-label="뒤로">${icon("back", 22)}</button>`
                   : `<span class="mark">${icon("clover", 24)}</span>`}
-            <div><b>${sub ? esc(subTitle) : 'CLOVER'}</b>
+            <div><b>${sub ? esc(subTitle) : 'CLOVER'}${
+              sub ? '' : `<span class="now-clock" id="nowClock">${nowLabel()}</span>`}</b>
               <small>${esc(app.space.name || '우리집')}</small></div>
           </div>
           <div class="status">
@@ -3558,20 +3770,27 @@
 
   /* 반복 지출을 이번 달에 아직 안 만들었으면 생활비 내역으로 자동 생성한다.
      같은 달에 두 번 만들지 않도록 applied 목록에 달을 기록한다. */
+  /* 반복 지출은 "예정일이 실제로 지났을 때"만 내역을 만든다.
+     아직 오지 않은 날의 지출을 미리 적어 두면 그달 사용액이 부풀기 때문이다.
+     넘어간 항목은 applied 에 남지 않으므로, 그날이 되면 다음 실행에서 자동으로 생성된다. */
   async function applyRecurrings(month = app.month) {
     if (app.busy) return;
-    const due = app.state.recurrings.filter(r =>
-      num(r.amount) > 0 && !(r.applied || []).includes(month));
-    if (!due.length) return;
     const [my, mm] = month.split('-').map(Number);
     const lastDay = new Date(my, mm, 0).getDate();
+    const todayStr = ymd(today());
+    const dateOf = r => `${month}-${pad(Math.min(r.day || 1, lastDay))}`;
+    const isDue = r => num(r.amount) > 0
+      && !(r.applied || []).includes(month)
+      && dateOf(r) <= todayStr;          // 예정일 도래분만
+
+    const due = app.state.recurrings.filter(isDue);
+    if (!due.length) return;
     await mutate(
       state => {
         for (const r of state.recurrings) {
-          if (num(r.amount) <= 0 || (r.applied || []).includes(month)) continue;
-          const day = Math.min(r.day || 1, lastDay);
+          if (!isDue(r)) continue;
           state.transactions.push({
-            id: uid(), date: `${month}-${pad(day)}`, owner: r.owner,
+            id: uid(), date: dateOf(r), owner: r.owner,
             category: r.category, place: r.name, amount: num(r.amount),
             memo: '반복 지출 자동 생성', recurringId: r.id
           });
@@ -3727,6 +3946,7 @@
           x.memo = String(d.get('memo') || '').trim();
           x.monthlyAdd = num(d.get('monthlyAdd'));
           if (d.get('addFrom')) x.addFrom = String(d.get('addFrom')).slice(0, 7);
+          if (d.has('addDay')) x.addDay = Math.min(28, Math.max(1, num(d.get('addDay')) || 25));
           const at = String(d.get('from') || app.month).slice(0, 7);
           setHistory(x.history, at, d.get('amount'));
           x.asOf = `${at}-01`;
@@ -4078,6 +4298,12 @@
     // 월별 리포트 — 이미지(PNG)로 저장. 요약 값을 canvas에 직접 그린다.
     if (t.closest('[data-report-image]')) {
       exportReportImage();
+      return;
+    }
+    // 월별 리포트 — 진짜 PDF 파일로 저장(인쇄창에 PDF 저장이 없는 기기 대비)
+    if (t.closest('[data-report-pdf]')) {
+      try { exportReportPdf(); }
+      catch (e) { toast('PDF를 만들지 못했습니다: ' + (e.message || e)); }
       return;
     }
 
@@ -4630,6 +4856,14 @@
       return;
     }
 
+    // 리포트에 담을 상세 내역 선택
+    const pick = t.closest('[data-report-pick]');
+    if (pick) {
+      app.reportPicks[pick.dataset.reportPick] = pick.checked;
+      render();
+      return;
+    }
+
     const preset = t.closest('[data-add-preset]');
     if (preset) {
       const kind = preset.dataset.addPreset;
@@ -4847,6 +5081,21 @@
       amt?.focus(); amt?.select();
     }
   }
+
+  /* 상단 시계. 화면을 다시 그리지 않고 글자만 바꿔, 입력 중에도 방해되지 않게 한다.
+     날짜가 바뀌면 "오늘" 기준 계산(자동 발생분 표시)도 갱신되어야 하므로 다시 그린다. */
+  (function clockTick() {
+    let lastDay = ymd(today());
+    setInterval(() => {
+      const el = document.querySelector('#nowClock');
+      if (el) el.textContent = nowLabel();
+      const nowDay = ymd(today());
+      if (nowDay !== lastDay) {          // 자정을 넘겼으면 화면 전체를 새로 계산
+        lastDay = nowDay;
+        if (app.screen === 'app' && !app.busy) requestRender();
+      }
+    }, 20000);
+  })();
 
   /* 길게 누르기(1초) — 짧은 탭은 보기·이동, 길게 누르면 바로 편집.
      실수로 값이 바뀌지 않게 편집은 의도적 롱프레스로만 연다. */
