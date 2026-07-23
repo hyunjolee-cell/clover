@@ -1903,9 +1903,17 @@
 
           <div class="totals">
             <div><span>이 달 총 사용액</span><b>${won(monthSpend)}</b></div>
-            ${OWNERS.map(o =>
-              `<button type="button" data-goto="budgets:${o}"><span class="${ownerClass(o)}-text">${o}</span><b>${won(spendByOwner(app.month, o))}${icon('chevron', 14)}</b></button>`).join('')}
+            ${OWNERS.map(o => {
+              const on = filter.owner === o;
+              return `<button type="button" class="${on ? 'on' : ''}" data-tx-owner="${o}"
+                        title="${o} 결제분만 보기">
+                <span class="${ownerClass(o)}-text">${o}</span>
+                <b>${won(spendByOwner(app.month, o))}</b></button>`;
+            }).join('')}
           </div>
+          <p class="note">위 금액은 <b>누가 결제했는지</b>를 나눠 본 것입니다.
+            생활비는 혼자 썼더라도 모두 <b>공동 지출</b>로 집계됩니다.
+            개인 용돈은 생활비 예산에서 따로 관리합니다.</p>
         </article>
 
         <article class="card">
@@ -4287,6 +4295,16 @@
     }
 
     if (t.closest('[data-apply-live]')) { render(); return; }
+
+    // 결제자별 금액을 누르면 그 사람이 결제한 내역만 걸러 본다(다시 누르면 전체)
+    const txOwner = t.closest('[data-tx-owner]');
+    if (txOwner) {
+      const o = txOwner.dataset.txOwner;
+      app.txFilter = app.txFilter || { owner: '', category: '' };
+      app.txFilter.owner = app.txFilter.owner === o ? '' : o;
+      render();
+      return;
+    }
 
     // 월별 리포트 — 인쇄(브라우저에서 PDF로 저장)
     if (t.closest('[data-report-print]')) {

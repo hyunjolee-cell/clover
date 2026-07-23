@@ -994,6 +994,11 @@ button.card.metric:active { transform: scale(.99); }
   font: inherit; text-align: left; font-variant-numeric: tabular-nums;
 }
 .totals button:hover { background: var(--g100); }
+/* 결제자로 걸러 보는 중임을 표시 */
+.totals button.on {
+  background: var(--sky); border-color: var(--blue-pale);
+  box-shadow: inset 0 0 0 1px var(--blue-pale);
+}
 .totals button b { display: inline-flex; align-items: center; gap: 4px; }
 .totals button b .ico { color: var(--g300); }
 
