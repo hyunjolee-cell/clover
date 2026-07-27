@@ -319,6 +319,12 @@ select {
   background: none; border-radius: 0;
 }
 .month-nav input:focus { box-shadow: none; background: var(--surface); }
+.month-nav .month-cur {
+  min-width: 112px; min-height: 36px; padding: 4px 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: var(--g900);
+  white-space: nowrap;
+}
 /* 네이티브 캘린더 아이콘을 숨긴다 — 아이콘 대신 입력칸 전체가 달력을 연다.
    이 아이콘이 오른쪽 화살표와 붙어 같이 눌리던 문제를 없앤다. */
 .month-nav input::-webkit-calendar-picker-indicator {

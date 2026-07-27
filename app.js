@@ -152,6 +152,12 @@
   // app 이 아직 선언되기 전이라 여기선 급여일 기본(25) 기준으로 초기화한다.
   // app.state 로드 후에는 render() 에서 매번 최신 사이클로 다시 계산한다.
   let currentMonth = monthOf(ymd(today()));
+  /* 화면 제목에 보여줄 "달 이름". 금전 집계는 급여 사이클(app.month)로 하되,
+     제목은 현 시점 기준으로 본다 — 지금 보고 있는 사이클이 현재 사이클이면 오늘의 달력월,
+     과거·미래 사이클로 이동했으면 그 사이클이 시작한 달력월을 쓴다. */
+  const displayLabel = () => monthLabel(
+    app.month === currentMonth ? ym(today()) : ym(cycleRange(app.month).start)
+  );
   const randomText = len =>
     Array.from(crypto.getRandomValues(new Uint8Array(len)))
       .map(v => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[v % 32])
@@ -1325,7 +1331,7 @@
   const monthNav = () => `
     <div class="month-nav">
       <button type="button" class="icon-btn" data-shift="-1" aria-label="이전 달">‹</button>
-      <input id="monthPicker" type="month" value="${app.month}" aria-label="조회 월">
+      <span class="month-cur">${displayLabel()}</span>
       <button type="button" class="icon-btn" data-shift="1" aria-label="다음 달">›</button>
     </div>`;
 
@@ -1618,7 +1624,7 @@
                    style="height:${d.future ? 0 : Math.max(2, (d[key] / max) * H)}px"
                    title="${label} ${won(d[key])}"></div>`).join('')}
           </div>
-          <span class="ch-x">${Number(d.m.slice(5))}월</span>
+          <span class="ch-x">${cycleRange(d.m).start.getMonth() + 1}월</span>
           ${big ? '' : `<div class="ch-labels">
             ${d.future ? '<span class="ch-none">기록 없음</span>'
               : series.map(([label, key, cls]) => {
@@ -1642,7 +1648,7 @@
           <div>
             <h3>수입·지출·적금 추이</h3>
             <small>${big ? `${year}년 1~12월`
-              : `${year}년 ${quarter}분기 · ${months.map(m => Number(m.slice(5))).join('·')}월`}</small>
+              : `${year}년 ${quarter}분기 · ${months.map(m => cycleRange(m).start.getMonth() + 1).join('·')}월`}</small>
           </div>
           <button class="secondary" type="button" data-chart-big="${big ? '0' : '1'}">
             ${big ? '분기로 보기' : '전체보기'}
@@ -1671,7 +1677,7 @@
     return `
       <section class="page">
         <div class="page-head">
-          <div><span class="eyebrow">홈</span><h2>${monthLabel(app.month)}</h2></div>
+          <div><span class="eyebrow">홈</span><h2>${displayLabel()}</h2></div>
           ${monthNav()}
         </div>
 
@@ -1844,9 +1850,9 @@
           </div>
           <div class="wide">
             <small class="${applied ? 'plus' : 'note'}">${
-              applied ? `${monthLabel(app.month)}에 이미 반영됨`
+              applied ? `${displayLabel()}에 이미 반영됨`
               : pending ? `${Number(dueDate.slice(8))}일 예정 — 그날 자동으로 기록됩니다`
-              : `${monthLabel(app.month)}에 아직 미반영`}</small>
+              : `${displayLabel()}에 아직 미반영`}</small>
           </div>
         </form>`;
     }).join('');
@@ -1911,7 +1917,7 @@
     return `
       <section class="page">
         <div class="page-head">
-          <div><span class="eyebrow">월별</span><h2>${monthLabel(app.month)} 변동 입력</h2></div>
+          <div><span class="eyebrow">월별</span><h2>${displayLabel()} 변동 입력</h2></div>
           ${monthNav()}
         </div>
 
@@ -2070,7 +2076,7 @@
           ${kind === 'saving' ? `
             <div class="wide bal-box">
               <div class="bal-now">
-                <span>${monthLabel(app.month)} 기준 모인 돈</span>
+                <span>${displayLabel()} 기준 모인 돈</span>
                 <b>${won(savingBalance(x))}</b>
               </div>
               <div class="row">
@@ -2566,7 +2572,7 @@
           <div class="card-head">
             <div>
               <h3>${title}</h3>
-              <small>${monthLabel(app.month)} 기준 합계 ${won(monthTotal)}</small>
+              <small>${displayLabel()} 기준 합계 ${won(monthTotal)}</small>
             </div>
             ${presetPicker(kind)}
           </div>
@@ -2731,7 +2737,7 @@
     return `
       <section class="page">
         <div class="page-head">
-          <div><span class="eyebrow">달력 · 급여 사이클 ${cycleText}</span><h2>${monthLabel(app.month)}</h2></div>
+          <div><span class="eyebrow">달력 · 급여 사이클 ${cycleText}</span><h2>${displayLabel()}</h2></div>
           ${monthNav()}
         </div>
 
@@ -3289,14 +3295,14 @@
     return `
       <section class="page report-page">
         <div class="page-head">
-          <div><span class="eyebrow">월별 리포트</span><h2>${monthLabel(app.month)}</h2></div>
+          <div><span class="eyebrow">월별 리포트</span><h2>${displayLabel()}</h2></div>
           ${monthNav()}
         </div>
 
         <article class="card" id="reportSheet">
           <div class="report-head">
             <b>CLOVER · ${esc(app.space.name || '우리집')}</b>
-            <span>${monthLabel(app.month)} 가계 요약</span>
+            <span>${displayLabel()} 가계 요약</span>
           </div>
           <div class="report-kpis">
             <div><small>총수입</small><b>${won(s.income)}</b></div>
@@ -3375,7 +3381,7 @@
     g.font = '700 34px "Noto Sans KR", sans-serif';
     g.fillText('CLOVER', pad, 58);
     g.font = '400 20px "Noto Sans KR", sans-serif';
-    g.fillText(`${app.space.name || '우리집'} · ${monthLabel(app.month)} 가계 요약`, pad, 96);
+    g.fillText(`${app.space.name || '우리집'} · ${displayLabel()} 가계 요약`, pad, 96);
 
     // KPI 4칸
     const kpis = [
@@ -3944,7 +3950,7 @@
         },
         {
           action: 'update', type: 'utilityActual', id,
-          summary: `${monthLabel(app.month)} ${utility?.name || '공과금'} 실제금액 ` +
+          summary: `${displayLabel()} ${utility?.name || '공과금'} 실제금액 ` +
                    (raw === '' ? '비움' : won(num(raw))),
           pick: s => {
             const v = s.monthly[app.month]?.utilityActuals?.[id];
@@ -4612,7 +4618,7 @@
         },
         {
           action: 'delete', type: 'utilityActual', id,
-          summary: `${monthLabel(app.month)} ${utility?.name || '공과금'} 실제금액 비움`,
+          summary: `${displayLabel()} ${utility?.name || '공과금'} 실제금액 비움`,
           pick: s => {
             const v = s.monthly[app.month]?.utilityActuals?.[id];
             return v === undefined ? null : { amount: v };
