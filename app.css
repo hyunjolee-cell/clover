@@ -1236,11 +1236,23 @@ button.hero-item:active { transform: none; }
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
   font-size: 13px;
 }
-.today-top span:first-child { font-weight: 600; }
-.today-budget { color: rgba(255,255,255,.8); font-variant-numeric: tabular-nums; }
+.today-label { font-weight: 600; }
+.today-budget {
+  color: rgba(255,255,255,.82); font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.today-budget .carry {
+  font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+  background: rgba(255,255,255,.2); color: #fff;
+}
 .today-card strong {
   font-size: 34px; font-weight: 800; letter-spacing: -.04em; line-height: 1;
   font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.today-card strong .today-state {
+  font-size: 14px; font-weight: 600; letter-spacing: 0;
+  color: rgba(255,255,255,.85);
 }
 .today-card strong.minus { color: #fff; }
 .today-bar {
@@ -1596,8 +1608,7 @@ button.ch-lbl:active { transform: scale(.96); }
 
 /* 상단 현재 일시 ----------------------------------------------------------- */
 .now-clock {
-  margin-left: 7px; font-size: 11.5px; font-weight: 500;
-  color: var(--g500); letter-spacing: -.2px; white-space: nowrap;
+  font-weight: 500; letter-spacing: -.2px; white-space: nowrap;
 }
 
 /* 연결되지 않은 자동이체 --------------------------------------------------- */

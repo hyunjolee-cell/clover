@@ -239,6 +239,7 @@
       const r = row(name, owner, amount, memo);
       r.startBalance = balance;
       r.startMonth = currentMonth;
+      r.payday = 25;          // 적립일(월급날). 이 날이 지나면 그달 납입분이 잔액에 쌓인다
       r.purpose = purpose;    // flexible: 언제든 꺼내 씀 / longterm: 목적까지 모음
       r.withdrawals = [];
       return r;
@@ -386,6 +387,7 @@
     for (const x of s.savings) {
       x.startBalance = num(x.startBalance);
       x.startMonth = String(x.startMonth || x.history[0]?.from || currentMonth).slice(0, 7);
+      x.payday = Math.min(28, Math.max(1, num(x.payday) || 25));   // 적립일(이 날 지나면 그달 납입 반영)
       // 용도: flexible(언제든 꺼내 쓰는 돈) / longterm(목적까지 모으는 돈)
       if (x.purpose !== 'flexible' && x.purpose !== 'longterm') {
         x.purpose = /경조사|여행|옷|비상|생활|용돈/.test(x.name) ? 'flexible' : 'longterm';
@@ -609,6 +611,24 @@
     app.state.budgets.filter(b => b.owner === owner)
       .reduce((s, b) => s + historyValue(b.history, month), 0);
 
+  /* 공동생활비 이월 잔액(공동생활비만 관리 — 개인 용돈은 이월하지 않는다).
+     지난 달들의 (예산 − 실사용)을 누적한다. 남으면 +(이월), 초과하면 −(차감).
+     실제 통장처럼 앞뒤 달이 이어지게 한다. 시작점은 가장 이른 공동예산 설정 달. */
+  function sharedCarryover(month = app.month) {
+    const commons = app.state.budgets.filter(b => b.owner === '공동');
+    if (!commons.length) return 0;
+    let earliest = month;
+    for (const b of commons)
+      for (const h of (b.history || []))
+        if (String(h.from) < earliest) earliest = String(h.from);
+    let carry = 0, c = earliest, guard = 0;
+    while (String(c) < String(month) && guard++ < 600) {
+      carry += budgetByOwner(c, '공동') - sharedSpend(c);
+      c = shiftMonth(c, 1);
+    }
+    return carry;
+  }
+
   /* 자산·부채는 월별 이력을 갖는다. 기본은 지금 보고 있는 달 기준이다. */
   /* 자산 잔액에 목돈 지출 영향을 파생으로 얹는다.
      자산 history는 사용자가 적은 값만 두고, 집·차 지출은 계산 시 반영한다.
@@ -648,23 +668,35 @@
     const add = num(a.monthlyAdd) * addOccurrences(a, month, project);
     return historyValue(a.history, month) + add + bigSpendEffect(a.id, month);
   };
-  /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다 */
-  function savingBalance(sv, month = app.month) {
+  /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다.
+     자산과 같은 원칙: 그 달 적립일(기본 25일=보통 월급날)이 실제로 지나야 그 달 납입분이 쌓인다.
+     그래서 25일이 지나면 이번 달 납입이 잔액에 반영된다.
+     project=true 는 미래 예상(추이·포캐스팅)용으로 도래 여부와 무관하게 전부 센다. */
+  function savingBalance(sv, month = app.month, project = false) {
     let sum = num(sv.startBalance);
     const from = sv.startMonth;
-    // 시작 잔액은 "그 달 시점에 모여 있던 돈"이다.
-    // 그 달 납입분은 이미 포함돼 있으므로 다음 달부터 더한다.
+    const todayStr = ymd(today());
+    const pd = Math.min(28, Math.max(1, num(sv.payday) || 25));
+    // 시작 잔액은 "그 달 시점에 모여 있던 돈"이므로 그 달 납입은 이미 포함. 다음 달부터 더한다.
     if (String(month) > String(from)) {
       const n = monthsBetween(from, month);
-      for (let i = 1; i <= n; i++) sum += historyValue(sv.history, shiftMonth(from, i));
+      for (let i = 1; i <= n; i++) {
+        const c = shiftMonth(from, i);
+        if (!project) {
+          const [cy, cm] = c.split('-').map(Number);
+          const lastD = new Date(cy, cm, 0).getDate();
+          if (`${c}-${pad(Math.min(pd, lastD))}` > todayStr) continue;   // 적립일 미도래분 제외
+        }
+        sum += historyValue(sv.history, c);
+      }
     }
     for (const w of sv.withdrawals) {
       if (String(w.month) <= String(month)) sum -= num(w.amount);
     }
     return Math.max(0, sum);
   }
-  const savingBalanceTotal = (month = app.month) =>
-    app.state.savings.reduce((s, sv) => s + savingBalance(sv, month), 0);
+  const savingBalanceTotal = (month = app.month, project = false) =>
+    app.state.savings.reduce((s, sv) => s + savingBalance(sv, month, project), 0);
 
   const assetTotal = (month = app.month, project = false) =>
     app.state.assets.filter(a => a.kind === 'asset')
@@ -674,7 +706,7 @@
       .reduce((s, a) => s + assetAt(a, month, project), 0);
   /* 순자산 = 등록 자산 + 모아 둔 적금 − 부채 */
   const netAssets = (month = app.month, project = false) =>
-    assetTotal(month, project) + savingBalanceTotal(month) - debtTotal(month, project);
+    assetTotal(month, project) + savingBalanceTotal(month, project) - debtTotal(month, project);
 
   /* 최근 N개월 순자산 추이.
      아직 오지 않은 달은 "예상"으로 표시되므로 자동 증가분을 미리 반영해 보여 준다.
@@ -684,7 +716,7 @@
     for (let i = months - 1; i >= 0; i--) {
       const m = shiftMonth(endMonth, -i);
       const project = String(m) > currentMonth;
-      out.push({ month: m, asset: assetTotal(m, project) + savingBalanceTotal(m),
+      out.push({ month: m, asset: assetTotal(m, project) + savingBalanceTotal(m, project),
                  debt: debtTotal(m, project), net: netAssets(m, project) });
     }
     return out;
@@ -737,11 +769,12 @@
       ? app.state.assets.filter(x => x.kind === 'debt' && sc.debtIds.includes(x.id))
       : app.state.assets.filter(x => x.kind === 'debt');
 
-    // 시작 시점의 자산·부채와 그때까지 모아 둔 적금 잔액을 함께 본다
+    // 시작 시점의 자산·부채와 그때까지 모아 둔 적금 잔액을 함께 본다.
+    // 예측이므로 시작월이 미래여도 그때까지 예정대로 쌓인 것으로 본다(project=true).
     const startValue =
-      assets.reduce((s, x) => s + assetAt(x, start), 0) +
-      savings.reduce((s, x) => s + savingBalance(x, start), 0) -
-      debts.reduce((s, x) => s + assetAt(x, start), 0);
+      assets.reduce((s, x) => s + assetAt(x, start, true), 0) +
+      savings.reduce((s, x) => s + savingBalance(x, start, true), 0) -
+      debts.reduce((s, x) => s + assetAt(x, start, true), 0);
 
     const total = maxMonths ?? Math.max(1, num(sc.months));
     let value = startValue;
@@ -1610,12 +1643,13 @@
 
   function homeView() {
     const s = summary();
+    const carry = sharedCarryover();                 // 지난 달에서 넘어온 잔액(초과면 음수)
+    const avail = s.sharedBudget + carry;             // 이번 달 실제 쓸 수 있는 돈
     const sharedUsed = s.spend;
-    const sharedLeft = s.sharedBudget - sharedUsed;
-    // 예산이 0원이어도 쓴 게 있으면 "초과"로 본다(예산 미설정 시 남음 오표기 방지)
-    const over = sharedUsed > s.sharedBudget;
-    const sharedRate = s.sharedBudget > 0
-      ? Math.round((sharedUsed / s.sharedBudget) * 100)
+    const sharedLeft = avail - sharedUsed;
+    const over = sharedUsed > avail;                  // 가용을 넘겨 쓰면 초과
+    const sharedRate = avail > 0
+      ? Math.round((sharedUsed / avail) * 100)
       : (sharedUsed > 0 ? 100 : 0);
 
     return `
@@ -1628,16 +1662,19 @@
         <!-- 월 제목 바로 아래: 수입·지출·적금 6개월 추이 그래프 -->
         ${trendChart()}
 
-        <!-- 오늘 카드: 눌러 공동생활비 입력 상세로. 안쪽 지출기록 버튼은 그대로 -->
+        <!-- 공동생활비 카드: 눌러 입력 화면으로. 안쪽 지출기록 버튼은 그대로 -->
         <article class="today-card clickable ${over ? 'over' : ''}" data-goto="monthly">
           <div class="today-top">
-            <span>이번 달 공동생활비 ${over ? '초과' : '남음'}</span>
-            <span class="today-budget">예산 ${won(s.sharedBudget)}</span>
+            <span class="today-label">이번 달 공동생활비</span>
+            <span class="today-budget">예산 ${won(s.sharedBudget)}${
+              carry ? `<b class="carry ${carry > 0 ? 'plus' : 'minus'}">${
+                carry > 0 ? '이월 +' : '이월 −'}${won(Math.abs(carry))}</b>` : ''}</span>
           </div>
-          <strong class="${over ? 'minus' : ''}">${won(Math.abs(sharedLeft))}</strong>
+          <strong class="${over ? 'minus' : ''}">${won(Math.abs(sharedLeft))}
+            <span class="today-state">${over ? '초과' : '남음'}</span></strong>
           <div class="today-bar"><i style="width:${Math.min(100, sharedRate)}%"></i></div>
           <div class="today-foot">
-            <small>${won(sharedUsed)} 썼습니다 · 예산의 ${sharedRate}%</small>
+            <small>지금까지 ${won(sharedUsed)} 사용 · 가용 ${won(avail)}의 ${sharedRate}%</small>
             <button class="today-add" type="button" data-quick-add>＋ 지출 기록</button>
           </div>
         </article>
@@ -1650,7 +1687,7 @@
             <small>${s.remaining < 0
               ? '총지출이 수입−적금을 넘었습니다'
               : s.residual > 0
-                ? `잔여 ${won(s.residual)}는 지출로 집계됨`
+                ? `잔여 ${won(s.residual)}은 지출로 집계됨`
                 : '총수입 − 적금·저축 − 총지출'}</small>
           </div>
           <button class="hero-item" type="button" data-goto="assets">
@@ -1687,7 +1724,7 @@
           ['정기소득', s.base, '', 'settings:income'],
           ['보너스·상여금', s.bonus, '입력분', 'monthly']
         ] },
-      { key: 'keep', label: '옮긴 돈 · 쌓입니다', amount: -s.saving, cls: 'keep',
+      { key: 'keep', label: '모으는 돈 (적금)', amount: -s.saving, cls: 'keep',
         note: `모아 둔 적금 ${won(savingBalanceTotal())}`,
         detail: [['적금·저축', -s.saving, '', 'settings:saving']] },
       { key: 'out', label: '쓴 돈', amount: -s.expense, cls: 'minus',
@@ -2009,6 +2046,8 @@
               <input name="startBalance" inputmode="numeric" value="${num(x.startBalance)}"></label>
             <label class="field"><span>잔액 기준월</span>
               <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>
+            <label class="field"><span>적립일(매월 며칠)</span>
+              <input name="savingPayday" inputmode="numeric" value="${num(x.payday) || 25}"></label>` + `
             <label class="field"><span>용도</span>
               <select name="purpose">
                 <option value="flexible" ${x.purpose === 'flexible' ? 'selected' : ''}>언제든 쓰는 돈</option>
@@ -3660,9 +3699,9 @@
           <div class="brand">
             ${sub ? `<button class="back" type="button" data-back aria-label="뒤로">${icon("back", 22)}</button>`
                   : `<span class="mark">${icon("clover", 24)}</span>`}
-            <div><b>${sub ? esc(subTitle) : 'CLOVER'}${
-              sub ? '' : `<span class="now-clock" id="nowClock">${nowLabel()}</span>`}</b>
-              <small>${esc(app.space.name || '우리집')}</small></div>
+            <div><b>${sub ? esc(subTitle) : 'CLOVER'}</b>
+              <small>${esc(app.space.name || '우리집')}${
+                sub ? '' : ` · <span class="now-clock" id="nowClock">${nowLabel()}</span>`}</small></div>
           </div>
           <div class="status">
             ${app.undoStack.length ? `
@@ -3914,6 +3953,7 @@
             if (d.has('startBalance')) x.startBalance = num(d.get('startBalance'));
             if (d.get('startMonth')) x.startMonth = String(d.get('startMonth')).slice(0, 7);
             if (d.get('purpose')) x.purpose = d.get('purpose');
+            if (d.has('savingPayday')) x.payday = Math.min(28, Math.max(1, num(d.get('savingPayday')) || 25));
           }
 
         } else if (kind === 'utility') {
