@@ -79,7 +79,7 @@
   const today = () => new Date();
   const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const ym = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-  // currentMonth(현재 사이클)는 monthOf 정의 뒤에서 계산한다(아래).
+  const currentMonth = ym(today());
 
   const clone = v => JSON.parse(JSON.stringify(v));
   const uid = () =>
@@ -124,34 +124,7 @@
     const [ty, tm] = String(to).split('-').map(Number);
     return (ty - fy) * 12 + (tm - fm);
   };
-  /* ---- 급여일 사이클 -----------------------------------------------------
-     한 "달"은 달력월이 아니라 급여일(가구 공통, 기본 25일)에 시작하는 사이클이다.
-     급여일 당일부터 다음 달 사이클로 넘어간다. 예) 급여일 25일이면 7/25 → '2026-08'.
-     이렇게 하면 25일에 새 예산·적금 납입·이월이 한꺼번에 일어난다. */
-  const PAYDAY = () => {
-    // app 이 아직 초기화 전(TDZ)일 수 있으므로 안전하게 접근한다.
-    let st = null;
-    try { st = app && app.state; } catch { st = null; }
-    const v = num(st && st.payday);
-    return v ? Math.min(28, Math.max(1, v)) : 25;
-  };
-  // 날짜(YYYY-MM-DD)가 속한 사이클 라벨(YYYY-MM). 'YYYY-MM'만 오면 그대로 사이클 라벨로 본다.
-  const monthOf = date => {
-    const s = String(date || '');
-    const [y, m, d] = s.split('-').map(Number);
-    if (!y || !m) return s.slice(0, 7);
-    if (!d) return `${y}-${pad(m)}`;
-    if (d >= PAYDAY()) return ym(new Date(y, m, 1));   // 급여일 이후 → 다음 달 사이클
-    return `${y}-${pad(m)}`;
-  };
-  // 사이클 라벨 → 실제 날짜 범위. '2026-08'(급여일25) → 2026-07-25 ~ 2026-08-24
-  const cycleRange = label => {
-    const [y, m] = String(label).split('-').map(Number);
-    return { start: new Date(y, m - 2, PAYDAY()), end: new Date(y, m - 1, PAYDAY() - 1) };
-  };
-  // app 이 아직 선언되기 전이라 여기선 급여일 기본(25) 기준으로 초기화한다.
-  // app.state 로드 후에는 render() 에서 매번 최신 사이클로 다시 계산한다.
-  let currentMonth = monthOf(ymd(today()));
+  const monthOf = date => String(date || '').slice(0, 7);
   const randomText = len =>
     Array.from(crypto.getRandomValues(new Uint8Array(len)))
       .map(v => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[v % 32])
@@ -216,8 +189,7 @@
       notes: [],             // 특이사항 메모 — 저장하면 계속 누적
       recurrings: [],        // 반복 지출 — 매달 자동으로 생활비 내역이 만들어진다
       defaults: null,        // 사용자가 저장해 둔 기본값 (없으면 가계부 25.10 원본을 쓴다)
-      monthly: {},           // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
-      payday: 25             // 가구 공통 급여일 — 이 날에 새 달 사이클이 시작한다
+      monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
     };
   }
 
@@ -386,7 +358,6 @@
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
     if (s.defaults !== null && typeof s.defaults !== 'object') s.defaults = null;
-    s.payday = Math.min(28, Math.max(1, num(s.payday) || 25));   // 급여일(사이클 시작일)
 
     const fixHistory = (x, field) => {
       if (!Array.isArray(x[field]) || !x[field].length) {
@@ -637,24 +608,6 @@
   const budgetByOwner = (month, owner) =>
     app.state.budgets.filter(b => b.owner === owner)
       .reduce((s, b) => s + historyValue(b.history, month), 0);
-
-  /* 공동생활비 이월 잔액.
-     지난 사이클들의 (예산 − 실사용)을 누적한다. 남으면 +(이월), 초과하면 −(차감).
-     실제 통장처럼 앞뒤 사이클이 이어지게 한다. 시작점은 가장 이른 공동예산 설정 사이클. */
-  function sharedCarryover(cycle = app.month) {
-    const commons = app.state.budgets.filter(b => b.owner === '공동');
-    if (!commons.length) return 0;
-    let earliest = cycle;
-    for (const b of commons)
-      for (const h of (b.history || []))
-        if (String(h.from) < earliest) earliest = String(h.from);
-    let carry = 0, c = earliest, guard = 0;
-    while (String(c) < String(cycle) && guard++ < 600) {
-      carry += budgetByOwner(c, '공동') - sharedSpend(c);
-      c = shiftMonth(c, 1);
-    }
-    return carry;
-  }
 
   /* 자산·부채는 월별 이력을 갖는다. 기본은 지금 보고 있는 달 기준이다. */
   /* 자산 잔액에 목돈 지출 영향을 파생으로 얹는다.
@@ -1657,14 +1610,12 @@
 
   function homeView() {
     const s = summary();
-    const carry = sharedCarryover();               // 지난 사이클에서 이월된 잔액(초과면 음수)
-    const avail = s.sharedBudget + carry;           // 이번 사이클 실제 가용 예산
     const sharedUsed = s.spend;
-    const sharedLeft = avail - sharedUsed;
-    // 가용 예산을 넘겨 쓰면 "초과"
-    const over = sharedUsed > avail;
-    const sharedRate = avail > 0
-      ? Math.round((sharedUsed / avail) * 100)
+    const sharedLeft = s.sharedBudget - sharedUsed;
+    // 예산이 0원이어도 쓴 게 있으면 "초과"로 본다(예산 미설정 시 남음 오표기 방지)
+    const over = sharedUsed > s.sharedBudget;
+    const sharedRate = s.sharedBudget > 0
+      ? Math.round((sharedUsed / s.sharedBudget) * 100)
       : (sharedUsed > 0 ? 100 : 0);
 
     return `
@@ -1681,13 +1632,12 @@
         <article class="today-card clickable ${over ? 'over' : ''}" data-goto="monthly">
           <div class="today-top">
             <span>이번 달 공동생활비 ${over ? '초과' : '남음'}</span>
-            <span class="today-budget">예산 ${won(s.sharedBudget)}${
-              carry ? ` <b class="carry ${carry > 0 ? 'plus' : 'minus'}">${carry > 0 ? '+' : '−'}${won(Math.abs(carry))} 이월</b>` : ''}</span>
+            <span class="today-budget">예산 ${won(s.sharedBudget)}</span>
           </div>
           <strong class="${over ? 'minus' : ''}">${won(Math.abs(sharedLeft))}</strong>
           <div class="today-bar"><i style="width:${Math.min(100, sharedRate)}%"></i></div>
           <div class="today-foot">
-            <small>${won(sharedUsed)} 썼습니다 · 가용 ${won(avail)}의 ${sharedRate}%</small>
+            <small>${won(sharedUsed)} 썼습니다 · 예산의 ${sharedRate}%</small>
             <button class="today-add" type="button" data-quick-add>＋ 지출 기록</button>
           </div>
         </article>
@@ -1816,11 +1766,13 @@
   function recurringRows() {
     if (!app.state.recurrings.length)
       return emptyRow('등록된 반복 지출이 없습니다. 매달 나가는 구독료·용돈 등을 넣어보세요.');
+    const [ry, rm] = app.month.split('-').map(Number);
+    const rLast = new Date(ry, rm, 0).getDate();
     const rToday = ymd(today());
     return app.state.recurrings.map(x => {
       const applied = (x.applied || []).includes(app.month);
       // 예정일이 아직 안 왔으면 "미반영"이 아니라 "예정"으로 알린다
-      const dueDate = cycleDate(app.month, x.day || 1);
+      const dueDate = `${app.month}-${pad(Math.min(x.day || 1, rLast))}`;
       const pending = !applied && dueDate > rToday;
       return `
         <form class="item" data-row="recurring" data-id="${x.id}">
@@ -2571,18 +2523,6 @@
         </article>
 
         <article class="card">
-          <div class="card-head"><h3>급여일 · 사이클 기준</h3></div>
-          <label class="field">
-            <span>매월 며칠에 급여를 받으시나요 (1~28)</span>
-            <input type="number" inputmode="numeric" min="1" max="28"
-                   data-payday value="${PAYDAY()}">
-          </label>
-          <p class="note">이 날에 새 달 사이클이 시작합니다.
-            예산·적금 납입·이월·달력이 모두 이 기준으로 움직입니다.
-            예) 25일이면 7/25~8/24가 "8월"입니다.</p>
-        </article>
-
-        <article class="card">
           <div class="card-head"><h3>이 휴대폰</h3></div>
           <div class="settings-grid">
             <div>
@@ -2638,18 +2578,12 @@
 
      자동으로 생기는 항목(월급·자동이체)은 "아직 오지 않은 날"에는 표시하지 않는다.
      달력은 실제로 돈이 오간 기록을 보는 곳이므로, 예정일이 지나야 그날 찍힌다. */
-  /* 사이클 안에서 "매월 dd일"에 해당하는 실제 날짜 문자열을 만든다.
-     dd가 급여일 이상이면 사이클 앞부분(전월), 미만이면 뒷부분(당월)에 놓인다. */
-  function cycleDate(monthLabel, dd) {
-    const [y, m] = String(monthLabel).split('-').map(Number);
-    const P = PAYDAY();
-    const d = Math.min(28, Math.max(1, num(dd) || 1));
-    return ymd(d >= P ? new Date(y, m - 2, d) : new Date(y, m - 1, d));
-  }
-
   function dayEvents(month) {
     const map = {};
     const put = (date, ev) => { (map[date] ||= []).push(ev); };
+
+    const [y, m] = month.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
     const todayStr = ymd(today());
     const arrived = date => String(date) <= todayStr;   // 오늘까지만 실제 발생으로 본다
 
@@ -2657,7 +2591,8 @@
     for (const inc of app.state.recurringIncomes) {
       const amount = historyValue(inc.history, month);
       if (amount <= 0) continue;
-      const date = cycleDate(month, num(inc.payday) || 25);
+      const day = Math.min(num(inc.payday) || 25, last);
+      const date = `${month}-${pad(day)}`;
       if (!arrived(date)) continue;
       put(date, {
         type: 'income', source: 'salary', name: inc.name, owner: inc.owner,
@@ -2675,9 +2610,11 @@
           amount: num(t.amount), memo: t.category, id: t.id
         });
     }
-    // 자동이체는 매 사이클 같은 날 반복된다. 이체일이 지나야 달력에 찍는다.
+    // 자동이체는 매달 같은 날 반복되므로 보고 있는 달에 맞춰 날짜를 만든다.
+    // 이것도 자동 발생분이라 이체일이 지나야 달력에 찍는다.
     for (const f of app.state.flows) {
-      const date = cycleDate(month, num(f.day) || 1);
+      const day = Math.min(num(f.day) || 1, last);
+      const date = `${month}-${pad(day)}`;
       if (!arrived(date)) continue;
       put(date, {
         type: 'transfer', name: f.name, amount: num(f.amount), id: f.id,
@@ -2690,31 +2627,28 @@
   const accountName = id => app.state.accounts.find(a => a.id === id)?.name || '';
 
   function calendarView() {
-    // 급여 사이클 범위(예: 7/25 ~ 8/24)를 하루씩 그린다. 두 달력월에 걸친다.
-    const { start, end } = cycleRange(app.month);
-    const lead = start.getDay();                     // 사이클 첫날의 요일
+    const [y, m] = app.month.split('-').map(Number);
+    const first = new Date(y, m - 1, 1);
+    const last = new Date(y, m, 0).getDate();
+    const lead = first.getDay();                    // 그 달 1일의 요일
     const events = dayEvents(app.month);
     const selected = app.selectedDate && monthOf(app.selectedDate) === app.month
       ? app.selectedDate : '';
-    const todayStr = ymd(today());
 
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell empty"></div>');
-    let idx = 0;
-    for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate() + 1)) {
-      const date = ymd(dt);
-      const dnum = dt.getDate();
+    for (let d = 1; d <= last; d++) {
+      const date = `${app.month}-${pad(d)}`;
       const list = events[date] || [];
       const income = list.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
       const spend = list.filter(e => e.type === 'spend').reduce((s, e) => s + e.amount, 0);
       const transfer = list.filter(e => e.type === 'transfer').length;
-      const isToday = date === todayStr;
-      const dow = (lead + idx) % 7;
-      idx++;
+      const isToday = date === ymd(today());
+      const dow = (lead + d - 1) % 7;
       cells.push(`
         <button type="button" class="cal-cell${selected === date ? ' on' : ''}${isToday ? ' today' : ''}"
                 data-pick-date="${date}">
-          <span class="cal-day${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}${dnum === 1 ? ' month-first' : ''}">${dnum}</span>
+          <span class="cal-day${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}">${d}</span>
           ${income ? `<span class="cal-amt in">+${shortWon(income)}</span>` : ''}
           ${spend ? `<span class="cal-amt out">-${shortWon(spend)}</span>` : ''}
           ${transfer ? `<span class="cal-dot" title="자동이체 ${transfer}건"></span>` : ''}
@@ -2723,12 +2657,11 @@
 
     const s = summary();
     const detail = selected ? (events[selected] || []) : [];
-    const cycleText = `${start.getMonth() + 1}/${start.getDate()} ~ ${end.getMonth() + 1}/${end.getDate()}`;
 
     return `
       <section class="page">
         <div class="page-head">
-          <div><span class="eyebrow">달력 · 급여 사이클 ${cycleText}</span><h2>${monthLabel(app.month)}</h2></div>
+          <div><span class="eyebrow">달력</span><h2>${monthLabel(app.month)}</h2></div>
           ${monthNav()}
         </div>
 
@@ -3770,8 +3703,6 @@
 
   function render() {
     app.deferredRender = false;
-    // 급여일 설정이 반영된 현재 사이클을 매 렌더마다 최신화한다(자정·급여일 경계 대응)
-    currentMonth = monthOf(ymd(today()));
     const root = document.querySelector('#app');
     if (!root) return;
 
@@ -3800,11 +3731,13 @@
     const id = uid();
     const h = [{ from: app.month, amount: 0 }];
 
-    // 기본 날짜: 보고 있는 사이클이 이번 사이클이면 오늘, 아니면 그 사이클 시작일(급여일).
-    // (사이클 라벨에 일자를 그냥 붙이면 엉뚱한 사이클로 새는 것을 막는다)
-    const defaultDate = app.month === currentMonth
-      ? ymd(today())
-      : ymd(cycleRange(app.month).start);
+    // 보고 있는 달 안에서 기본 날짜를 정한다. 이번 달이면 오늘, 다른 달이면 1일.
+    const [my, mm] = app.month.split('-').map(Number);
+    const lastDay = new Date(my, mm, 0).getDate();
+    const defaultDay = app.month === currentMonth
+      ? pad(Math.min(today().getDate(), lastDay))
+      : '01';
+    const defaultDate = `${app.month}-${defaultDay}`;
     const map = {
       income: { id, name: '새 정기소득', owner: '공동', memo: '', history: h, payday: 25 },
       fixed: { id, name: '새 고정비', owner: '공동', memo: '', history: h },
@@ -3844,8 +3777,10 @@
      넘어간 항목은 applied 에 남지 않으므로, 그날이 되면 다음 실행에서 자동으로 생성된다. */
   async function applyRecurrings(month = app.month) {
     if (app.busy) return;
+    const [my, mm] = month.split('-').map(Number);
+    const lastDay = new Date(my, mm, 0).getDate();
     const todayStr = ymd(today());
-    const dateOf = r => cycleDate(month, r.day || 1);
+    const dateOf = r => `${month}-${pad(Math.min(r.day || 1, lastDay))}`;
     const isDue = r => num(r.amount) > 0
       && !(r.applied || []).includes(month)
       && dateOf(r) <= todayStr;          // 예정일 도래분만
@@ -4071,14 +4006,16 @@
           x.owner = d.get('owner') || x.owner;
           x.day = Math.min(28, Math.max(1, num(d.get('day')) || 1));
           x.amount = num(d.get('amount'));
-          // 이미 이번 사이클에 반영된 반복지출이면, 자동 생성된 그 내역도 함께 정정한다
+          // 이미 이번 달에 반영된 반복지출이면, 자동 생성된 그 달 내역도 함께 정정한다
           if ((x.applied || []).includes(app.month)) {
+            const [my, mm] = app.month.split('-').map(Number);
+            const lastDay = new Date(my, mm, 0).getDate();
             const gen = state.transactions.find(t =>
               t.recurringId === x.id && monthOf(t.date) === app.month);
             if (gen) {
               gen.owner = x.owner; gen.category = x.category;
               gen.place = x.name; gen.amount = x.amount;
-              gen.date = cycleDate(app.month, x.day);
+              gen.date = `${app.month}-${pad(Math.min(x.day, lastDay))}`;
             }
           }
         }
@@ -4420,7 +4357,7 @@
       const id = uid();
       const date = app.selectedDate && monthOf(app.selectedDate) === app.month
         ? app.selectedDate
-        : (app.month === currentMonth ? ymd(today()) : ymd(cycleRange(app.month).start));
+        : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
       if (app.tab !== 'monthly') pushNav();   // 다른 화면에서 왔으면 그 자리로 돌아가게
       app.tab = 'monthly';
       app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
@@ -4568,7 +4505,7 @@
       const [my, mm] = app.month.split('-').map(Number);
       const lastDay = new Date(my, mm, 0).getDate();
       const date = app.month === currentMonth
-        ? ymd(today()) : ymd(cycleRange(app.month).start);
+        ? ymd(today()) : `${app.month}-01`;
       app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
       await mutate(
         state => {
@@ -4929,18 +4866,6 @@
     if (t.id === 'monthPicker') {
       app.month = t.value || currentMonth;
       render();
-      return;
-    }
-
-    // 급여일(사이클 기준) 변경 — 가구 공통값이라 서버에 저장한다
-    if (t.matches('[data-payday]')) {
-      const v = Math.min(28, Math.max(1, num(t.value) || 25));
-      mutate(state => { state.payday = v; }, {
-        action: 'update', type: 'settings', id: null,
-        summary: `급여일을 매월 ${v}일로 변경`,
-        pick: () => ({ payday: v }),
-        success: `급여일을 ${v}일로 바꿨습니다. 사이클이 새로 계산됩니다.`
-      }).then(() => { app.month = monthOf(ymd(today())); render(); });
       return;
     }
 
