@@ -1594,6 +1594,15 @@ button.ch-lbl:active { transform: scale(.96); }
 }
 .est-note { color: var(--warn-text); font-weight: 600; }
 
+/* 생활비 이월 배지 --------------------------------------------------------- */
+.today-budget .carry {
+  margin-left: 4px; font-size: 11px; font-weight: 700;
+  padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.22);
+}
+.today-budget .carry.plus { color: #eafff4; }
+.today-budget .carry.minus { color: #ffe6e6; }
+.cal-day.month-first::after { content: "·1일"; font-size: 8px; opacity: .55; margin-left: 1px; }
+
 /* 상단 현재 일시 ----------------------------------------------------------- */
 .now-clock {
   margin-left: 7px; font-size: 11.5px; font-weight: 500;
