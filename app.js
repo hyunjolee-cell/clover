@@ -79,7 +79,7 @@
   const today = () => new Date();
   const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const ym = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-  const currentMonth = ym(today());
+  // currentMonth(현재 사이클)는 monthOf 정의 뒤에서 계산한다(아래).
 
   const clone = v => JSON.parse(JSON.stringify(v));
   const uid = () =>
@@ -124,7 +124,34 @@
     const [ty, tm] = String(to).split('-').map(Number);
     return (ty - fy) * 12 + (tm - fm);
   };
-  const monthOf = date => String(date || '').slice(0, 7);
+  /* ---- 급여일 사이클 -----------------------------------------------------
+     한 "달"은 달력월이 아니라 급여일(가구 공통, 기본 25일)에 시작하는 사이클이다.
+     급여일 당일부터 다음 달 사이클로 넘어간다. 예) 급여일 25일이면 7/25 → '2026-08'.
+     이렇게 하면 25일에 새 예산·적금 납입·이월이 한꺼번에 일어난다. */
+  const PAYDAY = () => {
+    // app 이 아직 초기화 전(TDZ)일 수 있으므로 안전하게 접근한다.
+    let st = null;
+    try { st = app && app.state; } catch { st = null; }
+    const v = num(st && st.payday);
+    return v ? Math.min(28, Math.max(1, v)) : 25;
+  };
+  // 날짜(YYYY-MM-DD)가 속한 사이클 라벨(YYYY-MM). 'YYYY-MM'만 오면 그대로 사이클 라벨로 본다.
+  const monthOf = date => {
+    const s = String(date || '');
+    const [y, m, d] = s.split('-').map(Number);
+    if (!y || !m) return s.slice(0, 7);
+    if (!d) return `${y}-${pad(m)}`;
+    if (d >= PAYDAY()) return ym(new Date(y, m, 1));   // 급여일 이후 → 다음 달 사이클
+    return `${y}-${pad(m)}`;
+  };
+  // 사이클 라벨 → 실제 날짜 범위. '2026-08'(급여일25) → 2026-07-25 ~ 2026-08-24
+  const cycleRange = label => {
+    const [y, m] = String(label).split('-').map(Number);
+    return { start: new Date(y, m - 2, PAYDAY()), end: new Date(y, m - 1, PAYDAY() - 1) };
+  };
+  // app 이 아직 선언되기 전이라 여기선 급여일 기본(25) 기준으로 초기화한다.
+  // app.state 로드 후에는 render() 에서 매번 최신 사이클로 다시 계산한다.
+  let currentMonth = monthOf(ymd(today()));
   const randomText = len =>
     Array.from(crypto.getRandomValues(new Uint8Array(len)))
       .map(v => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[v % 32])
@@ -189,7 +216,8 @@
       notes: [],             // 특이사항 메모 — 저장하면 계속 누적
       recurrings: [],        // 반복 지출 — 매달 자동으로 생활비 내역이 만들어진다
       defaults: null,        // 사용자가 저장해 둔 기본값 (없으면 가계부 25.10 원본을 쓴다)
-      monthly: {}            // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
+      monthly: {},           // { 'YYYY-MM': { utilityActuals: { [utilityId]: number } } }
+      payday: 25             // 가구 공통 급여일 — 이 날에 새 달 사이클이 시작한다
     };
   }
 
@@ -239,7 +267,6 @@
       const r = row(name, owner, amount, memo);
       r.startBalance = balance;
       r.startMonth = currentMonth;
-      r.payday = 25;          // 적립일(월급날). 이 날이 지나면 그달 납입분이 잔액에 쌓인다
       r.purpose = purpose;    // flexible: 언제든 꺼내 씀 / longterm: 목적까지 모음
       r.withdrawals = [];
       return r;
@@ -359,6 +386,7 @@
     }
     if (!s.monthly || typeof s.monthly !== 'object') s.monthly = {};
     if (s.defaults !== null && typeof s.defaults !== 'object') s.defaults = null;
+    s.payday = Math.min(28, Math.max(1, num(s.payday) || 25));   // 급여일(사이클 시작일)
 
     const fixHistory = (x, field) => {
       if (!Array.isArray(x[field]) || !x[field].length) {
@@ -387,7 +415,6 @@
     for (const x of s.savings) {
       x.startBalance = num(x.startBalance);
       x.startMonth = String(x.startMonth || x.history[0]?.from || currentMonth).slice(0, 7);
-      x.payday = Math.min(28, Math.max(1, num(x.payday) || 25));   // 적립일(이 날 지나면 그달 납입 반영)
       // 용도: flexible(언제든 꺼내 쓰는 돈) / longterm(목적까지 모으는 돈)
       if (x.purpose !== 'flexible' && x.purpose !== 'longterm') {
         x.purpose = /경조사|여행|옷|비상|생활|용돈/.test(x.name) ? 'flexible' : 'longterm';
@@ -611,18 +638,18 @@
     app.state.budgets.filter(b => b.owner === owner)
       .reduce((s, b) => s + historyValue(b.history, month), 0);
 
-  /* 공동생활비 이월 잔액(공동생활비만 관리 — 개인 용돈은 이월하지 않는다).
-     지난 달들의 (예산 − 실사용)을 누적한다. 남으면 +(이월), 초과하면 −(차감).
-     실제 통장처럼 앞뒤 달이 이어지게 한다. 시작점은 가장 이른 공동예산 설정 달. */
-  function sharedCarryover(month = app.month) {
+  /* 공동생활비 이월 잔액.
+     지난 사이클들의 (예산 − 실사용)을 누적한다. 남으면 +(이월), 초과하면 −(차감).
+     실제 통장처럼 앞뒤 사이클이 이어지게 한다. 시작점은 가장 이른 공동예산 설정 사이클. */
+  function sharedCarryover(cycle = app.month) {
     const commons = app.state.budgets.filter(b => b.owner === '공동');
     if (!commons.length) return 0;
-    let earliest = month;
+    let earliest = cycle;
     for (const b of commons)
       for (const h of (b.history || []))
         if (String(h.from) < earliest) earliest = String(h.from);
     let carry = 0, c = earliest, guard = 0;
-    while (String(c) < String(month) && guard++ < 600) {
+    while (String(c) < String(cycle) && guard++ < 600) {
       carry += budgetByOwner(c, '공동') - sharedSpend(c);
       c = shiftMonth(c, 1);
     }
@@ -668,35 +695,23 @@
     const add = num(a.monthlyAdd) * addOccurrences(a, month, project);
     return historyValue(a.history, month) + add + bigSpendEffect(a.id, month);
   };
-  /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다.
-     자산과 같은 원칙: 그 달 적립일(기본 25일=보통 월급날)이 실제로 지나야 그 달 납입분이 쌓인다.
-     그래서 25일이 지나면 이번 달 납입이 잔액에 반영된다.
-     project=true 는 미래 예상(추이·포캐스팅)용으로 도래 여부와 무관하게 전부 센다. */
-  function savingBalance(sv, month = app.month, project = false) {
+  /* 적금 잔액 — 시작 잔액에 그동안 넣은 돈을 더하고 꺼내 쓴 돈을 뺀다 */
+  function savingBalance(sv, month = app.month) {
     let sum = num(sv.startBalance);
     const from = sv.startMonth;
-    const todayStr = ymd(today());
-    const pd = Math.min(28, Math.max(1, num(sv.payday) || 25));
-    // 시작 잔액은 "그 달 시점에 모여 있던 돈"이므로 그 달 납입은 이미 포함. 다음 달부터 더한다.
+    // 시작 잔액은 "그 달 시점에 모여 있던 돈"이다.
+    // 그 달 납입분은 이미 포함돼 있으므로 다음 달부터 더한다.
     if (String(month) > String(from)) {
       const n = monthsBetween(from, month);
-      for (let i = 1; i <= n; i++) {
-        const c = shiftMonth(from, i);
-        if (!project) {
-          const [cy, cm] = c.split('-').map(Number);
-          const lastD = new Date(cy, cm, 0).getDate();
-          if (`${c}-${pad(Math.min(pd, lastD))}` > todayStr) continue;   // 적립일 미도래분 제외
-        }
-        sum += historyValue(sv.history, c);
-      }
+      for (let i = 1; i <= n; i++) sum += historyValue(sv.history, shiftMonth(from, i));
     }
     for (const w of sv.withdrawals) {
       if (String(w.month) <= String(month)) sum -= num(w.amount);
     }
     return Math.max(0, sum);
   }
-  const savingBalanceTotal = (month = app.month, project = false) =>
-    app.state.savings.reduce((s, sv) => s + savingBalance(sv, month, project), 0);
+  const savingBalanceTotal = (month = app.month) =>
+    app.state.savings.reduce((s, sv) => s + savingBalance(sv, month), 0);
 
   const assetTotal = (month = app.month, project = false) =>
     app.state.assets.filter(a => a.kind === 'asset')
@@ -706,7 +721,7 @@
       .reduce((s, a) => s + assetAt(a, month, project), 0);
   /* 순자산 = 등록 자산 + 모아 둔 적금 − 부채 */
   const netAssets = (month = app.month, project = false) =>
-    assetTotal(month, project) + savingBalanceTotal(month, project) - debtTotal(month, project);
+    assetTotal(month, project) + savingBalanceTotal(month) - debtTotal(month, project);
 
   /* 최근 N개월 순자산 추이.
      아직 오지 않은 달은 "예상"으로 표시되므로 자동 증가분을 미리 반영해 보여 준다.
@@ -716,7 +731,7 @@
     for (let i = months - 1; i >= 0; i--) {
       const m = shiftMonth(endMonth, -i);
       const project = String(m) > currentMonth;
-      out.push({ month: m, asset: assetTotal(m, project) + savingBalanceTotal(m, project),
+      out.push({ month: m, asset: assetTotal(m, project) + savingBalanceTotal(m),
                  debt: debtTotal(m, project), net: netAssets(m, project) });
     }
     return out;
@@ -1643,11 +1658,12 @@
 
   function homeView() {
     const s = summary();
-    const carry = sharedCarryover();                 // 지난 달에서 넘어온 잔액(초과면 음수)
-    const avail = s.sharedBudget + carry;             // 이번 달 실제 쓸 수 있는 돈
+    const carry = sharedCarryover();               // 지난 사이클에서 이월된 잔액(초과면 음수)
+    const avail = s.sharedBudget + carry;           // 이번 사이클 실제 가용 예산
     const sharedUsed = s.spend;
     const sharedLeft = avail - sharedUsed;
-    const over = sharedUsed > avail;                  // 가용을 넘겨 쓰면 초과
+    // 가용 예산을 넘겨 쓰면 "초과"
+    const over = sharedUsed > avail;
     const sharedRate = avail > 0
       ? Math.round((sharedUsed / avail) * 100)
       : (sharedUsed > 0 ? 100 : 0);
@@ -1803,13 +1819,11 @@
   function recurringRows() {
     if (!app.state.recurrings.length)
       return emptyRow('등록된 반복 지출이 없습니다. 매달 나가는 구독료·용돈 등을 넣어보세요.');
-    const [ry, rm] = app.month.split('-').map(Number);
-    const rLast = new Date(ry, rm, 0).getDate();
     const rToday = ymd(today());
     return app.state.recurrings.map(x => {
       const applied = (x.applied || []).includes(app.month);
       // 예정일이 아직 안 왔으면 "미반영"이 아니라 "예정"으로 알린다
-      const dueDate = `${app.month}-${pad(Math.min(x.day || 1, rLast))}`;
+      const dueDate = cycleDate(app.month, x.day || 1);
       const pending = !applied && dueDate > rToday;
       return `
         <form class="item" data-row="recurring" data-id="${x.id}">
@@ -2046,8 +2060,6 @@
               <input name="startBalance" inputmode="numeric" value="${num(x.startBalance)}"></label>
             <label class="field"><span>잔액 기준월</span>
               <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>
-            <label class="field"><span>적립일(매월 며칠)</span>
-              <input name="savingPayday" inputmode="numeric" value="${num(x.payday) || 25}"></label>` + `
             <label class="field"><span>용도</span>
               <select name="purpose">
                 <option value="flexible" ${x.purpose === 'flexible' ? 'selected' : ''}>언제든 쓰는 돈</option>
@@ -2562,6 +2574,18 @@
         </article>
 
         <article class="card">
+          <div class="card-head"><h3>급여일 · 사이클 기준</h3></div>
+          <label class="field">
+            <span>매월 며칠에 급여를 받으시나요 (1~28)</span>
+            <input type="number" inputmode="numeric" min="1" max="28"
+                   data-payday value="${PAYDAY()}">
+          </label>
+          <p class="note">이 날에 새 달 사이클이 시작합니다.
+            예산·적금 납입·이월·달력이 모두 이 기준으로 움직입니다.
+            예) 25일이면 7/25~8/24가 "8월"입니다.</p>
+        </article>
+
+        <article class="card">
           <div class="card-head"><h3>이 휴대폰</h3></div>
           <div class="settings-grid">
             <div>
@@ -2617,12 +2641,18 @@
 
      자동으로 생기는 항목(월급·자동이체)은 "아직 오지 않은 날"에는 표시하지 않는다.
      달력은 실제로 돈이 오간 기록을 보는 곳이므로, 예정일이 지나야 그날 찍힌다. */
+  /* 사이클 안에서 "매월 dd일"에 해당하는 실제 날짜 문자열을 만든다.
+     dd가 급여일 이상이면 사이클 앞부분(전월), 미만이면 뒷부분(당월)에 놓인다. */
+  function cycleDate(monthLabel, dd) {
+    const [y, m] = String(monthLabel).split('-').map(Number);
+    const P = PAYDAY();
+    const d = Math.min(28, Math.max(1, num(dd) || 1));
+    return ymd(d >= P ? new Date(y, m - 2, d) : new Date(y, m - 1, d));
+  }
+
   function dayEvents(month) {
     const map = {};
     const put = (date, ev) => { (map[date] ||= []).push(ev); };
-
-    const [y, m] = month.split('-').map(Number);
-    const last = new Date(y, m, 0).getDate();
     const todayStr = ymd(today());
     const arrived = date => String(date) <= todayStr;   // 오늘까지만 실제 발생으로 본다
 
@@ -2630,8 +2660,7 @@
     for (const inc of app.state.recurringIncomes) {
       const amount = historyValue(inc.history, month);
       if (amount <= 0) continue;
-      const day = Math.min(num(inc.payday) || 25, last);
-      const date = `${month}-${pad(day)}`;
+      const date = cycleDate(month, num(inc.payday) || 25);
       if (!arrived(date)) continue;
       put(date, {
         type: 'income', source: 'salary', name: inc.name, owner: inc.owner,
@@ -2649,11 +2678,9 @@
           amount: num(t.amount), memo: t.category, id: t.id
         });
     }
-    // 자동이체는 매달 같은 날 반복되므로 보고 있는 달에 맞춰 날짜를 만든다.
-    // 이것도 자동 발생분이라 이체일이 지나야 달력에 찍는다.
+    // 자동이체는 매 사이클 같은 날 반복된다. 이체일이 지나야 달력에 찍는다.
     for (const f of app.state.flows) {
-      const day = Math.min(num(f.day) || 1, last);
-      const date = `${month}-${pad(day)}`;
+      const date = cycleDate(month, num(f.day) || 1);
       if (!arrived(date)) continue;
       put(date, {
         type: 'transfer', name: f.name, amount: num(f.amount), id: f.id,
@@ -2666,28 +2693,31 @@
   const accountName = id => app.state.accounts.find(a => a.id === id)?.name || '';
 
   function calendarView() {
-    const [y, m] = app.month.split('-').map(Number);
-    const first = new Date(y, m - 1, 1);
-    const last = new Date(y, m, 0).getDate();
-    const lead = first.getDay();                    // 그 달 1일의 요일
+    // 급여 사이클 범위(예: 7/25 ~ 8/24)를 하루씩 그린다. 두 달력월에 걸친다.
+    const { start, end } = cycleRange(app.month);
+    const lead = start.getDay();                     // 사이클 첫날의 요일
     const events = dayEvents(app.month);
     const selected = app.selectedDate && monthOf(app.selectedDate) === app.month
       ? app.selectedDate : '';
+    const todayStr = ymd(today());
 
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell empty"></div>');
-    for (let d = 1; d <= last; d++) {
-      const date = `${app.month}-${pad(d)}`;
+    let idx = 0;
+    for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate() + 1)) {
+      const date = ymd(dt);
+      const dnum = dt.getDate();
       const list = events[date] || [];
       const income = list.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
       const spend = list.filter(e => e.type === 'spend').reduce((s, e) => s + e.amount, 0);
       const transfer = list.filter(e => e.type === 'transfer').length;
-      const isToday = date === ymd(today());
-      const dow = (lead + d - 1) % 7;
+      const isToday = date === todayStr;
+      const dow = (lead + idx) % 7;
+      idx++;
       cells.push(`
         <button type="button" class="cal-cell${selected === date ? ' on' : ''}${isToday ? ' today' : ''}"
                 data-pick-date="${date}">
-          <span class="cal-day${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}">${d}</span>
+          <span class="cal-day${dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''}${dnum === 1 ? ' month-first' : ''}">${dnum}</span>
           ${income ? `<span class="cal-amt in">+${shortWon(income)}</span>` : ''}
           ${spend ? `<span class="cal-amt out">-${shortWon(spend)}</span>` : ''}
           ${transfer ? `<span class="cal-dot" title="자동이체 ${transfer}건"></span>` : ''}
@@ -2696,11 +2726,12 @@
 
     const s = summary();
     const detail = selected ? (events[selected] || []) : [];
+    const cycleText = `${start.getMonth() + 1}/${start.getDate()} ~ ${end.getMonth() + 1}/${end.getDate()}`;
 
     return `
       <section class="page">
         <div class="page-head">
-          <div><span class="eyebrow">달력</span><h2>${monthLabel(app.month)}</h2></div>
+          <div><span class="eyebrow">달력 · 급여 사이클 ${cycleText}</span><h2>${monthLabel(app.month)}</h2></div>
           ${monthNav()}
         </div>
 
@@ -3742,6 +3773,8 @@
 
   function render() {
     app.deferredRender = false;
+    // 급여일 설정이 반영된 현재 사이클을 매 렌더마다 최신화한다(자정·급여일 경계 대응)
+    currentMonth = monthOf(ymd(today()));
     const root = document.querySelector('#app');
     if (!root) return;
 
@@ -3770,13 +3803,11 @@
     const id = uid();
     const h = [{ from: app.month, amount: 0 }];
 
-    // 보고 있는 달 안에서 기본 날짜를 정한다. 이번 달이면 오늘, 다른 달이면 1일.
-    const [my, mm] = app.month.split('-').map(Number);
-    const lastDay = new Date(my, mm, 0).getDate();
-    const defaultDay = app.month === currentMonth
-      ? pad(Math.min(today().getDate(), lastDay))
-      : '01';
-    const defaultDate = `${app.month}-${defaultDay}`;
+    // 기본 날짜: 보고 있는 사이클이 이번 사이클이면 오늘, 아니면 그 사이클 시작일(급여일).
+    // (사이클 라벨에 일자를 그냥 붙이면 엉뚱한 사이클로 새는 것을 막는다)
+    const defaultDate = app.month === currentMonth
+      ? ymd(today())
+      : ymd(cycleRange(app.month).start);
     const map = {
       income: { id, name: '새 정기소득', owner: '공동', memo: '', history: h, payday: 25 },
       fixed: { id, name: '새 고정비', owner: '공동', memo: '', history: h },
@@ -3816,10 +3847,8 @@
      넘어간 항목은 applied 에 남지 않으므로, 그날이 되면 다음 실행에서 자동으로 생성된다. */
   async function applyRecurrings(month = app.month) {
     if (app.busy) return;
-    const [my, mm] = month.split('-').map(Number);
-    const lastDay = new Date(my, mm, 0).getDate();
     const todayStr = ymd(today());
-    const dateOf = r => `${month}-${pad(Math.min(r.day || 1, lastDay))}`;
+    const dateOf = r => cycleDate(month, r.day || 1);
     const isDue = r => num(r.amount) > 0
       && !(r.applied || []).includes(month)
       && dateOf(r) <= todayStr;          // 예정일 도래분만
@@ -3953,7 +3982,6 @@
             if (d.has('startBalance')) x.startBalance = num(d.get('startBalance'));
             if (d.get('startMonth')) x.startMonth = String(d.get('startMonth')).slice(0, 7);
             if (d.get('purpose')) x.purpose = d.get('purpose');
-            if (d.has('savingPayday')) x.payday = Math.min(28, Math.max(1, num(d.get('savingPayday')) || 25));
           }
 
         } else if (kind === 'utility') {
@@ -4046,16 +4074,14 @@
           x.owner = d.get('owner') || x.owner;
           x.day = Math.min(28, Math.max(1, num(d.get('day')) || 1));
           x.amount = num(d.get('amount'));
-          // 이미 이번 달에 반영된 반복지출이면, 자동 생성된 그 달 내역도 함께 정정한다
+          // 이미 이번 사이클에 반영된 반복지출이면, 자동 생성된 그 내역도 함께 정정한다
           if ((x.applied || []).includes(app.month)) {
-            const [my, mm] = app.month.split('-').map(Number);
-            const lastDay = new Date(my, mm, 0).getDate();
             const gen = state.transactions.find(t =>
               t.recurringId === x.id && monthOf(t.date) === app.month);
             if (gen) {
               gen.owner = x.owner; gen.category = x.category;
               gen.place = x.name; gen.amount = x.amount;
-              gen.date = `${app.month}-${pad(Math.min(x.day, lastDay))}`;
+              gen.date = cycleDate(app.month, x.day);
             }
           }
         }
@@ -4397,7 +4423,7 @@
       const id = uid();
       const date = app.selectedDate && monthOf(app.selectedDate) === app.month
         ? app.selectedDate
-        : (app.month === currentMonth ? ymd(today()) : `${app.month}-01`);
+        : (app.month === currentMonth ? ymd(today()) : ymd(cycleRange(app.month).start));
       if (app.tab !== 'monthly') pushNav();   // 다른 화면에서 왔으면 그 자리로 돌아가게
       app.tab = 'monthly';
       app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
@@ -4545,7 +4571,7 @@
       const [my, mm] = app.month.split('-').map(Number);
       const lastDay = new Date(my, mm, 0).getDate();
       const date = app.month === currentMonth
-        ? ymd(today()) : `${app.month}-01`;
+        ? ymd(today()) : ymd(cycleRange(app.month).start);
       app.openRow = `transaction:${id}`; app.draft = { id, kind: "transaction" };
       await mutate(
         state => {
@@ -4906,6 +4932,18 @@
     if (t.id === 'monthPicker') {
       app.month = t.value || currentMonth;
       render();
+      return;
+    }
+
+    // 급여일(사이클 기준) 변경 — 가구 공통값이라 서버에 저장한다
+    if (t.matches('[data-payday]')) {
+      const v = Math.min(28, Math.max(1, num(t.value) || 25));
+      mutate(state => { state.payday = v; }, {
+        action: 'update', type: 'settings', id: null,
+        summary: `급여일을 매월 ${v}일로 변경`,
+        pick: () => ({ payday: v }),
+        success: `급여일을 ${v}일로 바꿨습니다. 사이클이 새로 계산됩니다.`
+      }).then(() => { app.month = monthOf(ymd(today())); render(); });
       return;
     }
 

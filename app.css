@@ -1236,23 +1236,12 @@ button.hero-item:active { transform: none; }
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
   font-size: 13px;
 }
-.today-label { font-weight: 600; }
-.today-budget {
-  color: rgba(255,255,255,.82); font-variant-numeric: tabular-nums;
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-}
-.today-budget .carry {
-  font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
-  background: rgba(255,255,255,.2); color: #fff;
-}
+.today-top span:first-child { font-weight: 600; }
+.today-budget { color: rgba(255,255,255,.8); font-variant-numeric: tabular-nums; }
 .today-card strong {
   font-size: 34px; font-weight: 800; letter-spacing: -.04em; line-height: 1;
   font-variant-numeric: tabular-nums;
   display: flex; align-items: baseline; gap: 8px;
-}
-.today-card strong .today-state {
-  font-size: 14px; font-weight: 600; letter-spacing: 0;
-  color: rgba(255,255,255,.85);
 }
 .today-card strong.minus { color: #fff; }
 .today-bar {
@@ -1605,6 +1594,20 @@ button.ch-lbl:active { transform: scale(.96); }
   background: var(--warn-bg); border-radius: 4px; padding: 1px 6px; margin-left: 4px;
 }
 .est-note { color: var(--warn-text); font-weight: 600; }
+
+/* 공동생활비 카드 문구·이월 배지 ------------------------------------------- */
+.today-label { font-weight: 600; }
+.today-budget {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.today-budget .carry {
+  font-size: 11px; font-weight: 700;
+  padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,.2); color: #fff;
+}
+.today-card strong .today-state {
+  font-size: 14px; font-weight: 600; letter-spacing: 0; color: rgba(255,255,255,.85);
+}
+.cal-day.month-first::after { content: "·1일"; font-size: 8px; opacity: .55; margin-left: 1px; }
 
 /* 상단 현재 일시 ----------------------------------------------------------- */
 .now-clock {
