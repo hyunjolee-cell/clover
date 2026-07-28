@@ -588,6 +588,9 @@
     presenceBusy: false,   // presence 방송 진행 중 (중복 호출 방지)
     rtRetry: 0,            // 실시간 채널 재연결 시도 횟수
     reportPicks: {},       // 월별 리포트에 함께 담을 상세 내역 선택
+    helpOpen: false,       // 도움말 봇 열림 여부
+    helpQuery: '',         // 도움말 검색어
+    helpSel: null,         // 펼쳐 본 도움말 항목 인덱스
     undoStack: [],         // 되돌리기용 직전 상태 (최근 20건)
     expanded: new Set(),   // 로그 전후값 펼침
     channel: null,
@@ -1251,6 +1254,92 @@
 
   /* --- 7. 라벨 ------------------------------------------------------------ */
 
+  /* --- 도움말 봇 데이터 ---------------------------------------------------
+     앱 로직에 정확히 맞춘 자주 묻는 질문. steps=단계 안내 / body=설명. */
+  const HELP_TOPICS = [
+    { cat: '항목 설정', q: '공과금 항목을 추가하려면?', kw: '공과금 추가 전기 수도 도시가스 정수기 관리비',
+      steps: [
+        '아래 <b>더보기 → 항목 설정</b>으로 들어갑니다.',
+        '위쪽 칩에서 <b>공과금 항목</b>을 누릅니다.',
+        '오른쪽 <b>추가</b> 목록을 열고 원하는 항목을 고르거나, 없으면 <b>직접 입력하기…</b>를 선택합니다.',
+        '이름과 예상 금액을 적고 <b>저장</b>하면 끝입니다.'
+      ] },
+    { cat: '항목 설정', q: '고정비를 추가하려면?', kw: '고정비 추가 월세 보험 구독료 정수기',
+      steps: [
+        '<b>더보기 → 항목 설정</b>으로 들어갑니다.',
+        '위쪽 칩에서 <b>월 고정비</b>를 누릅니다.',
+        '<b>추가</b> 목록에서 고르거나 <b>직접 입력하기…</b>로 이름을 적습니다.',
+        '월 금액을 적고 <b>저장</b>합니다.'
+      ] },
+    { cat: '항목 설정', q: '고정비와 공과금, 어디에 넣어야 하나요?', kw: '고정비 공과금 차이 분류 정수기 어디 구분',
+      body: '<b>매달 금액이 일정한 것</b>은 <b>고정비</b>가 맞습니다. 정수기 렌탈료·구독료·보험처럼요.<br><br>' +
+            '<b>매달 실제 금액이 달라지는 것</b>은 <b>공과금</b>이 적합합니다. 전기·수도·가스처럼요. 공과금은 예상 금액과 실제 낸 금액을 따로 관리합니다.<br><br>' +
+            '예를 들어 <b>정수기</b>는 매달 같은 렌탈료라 고정비가 어울립니다. (기본값에도 고정비에 정수기가 들어 있습니다. 공과금으로 옮기실 때는 고정비의 정수기를 지워 두 번 잡히지 않게 해 주세요.)' },
+    { cat: '항목 설정', q: '한 번 넣으면 계속 반영되나요?', kw: '자동 반영 매달 계속 반복 유지',
+      body: '네, 계속 반영됩니다. 고정비·공과금·정기소득·적금·예산은 <b>저장한 달부터 그 이후 모든 달에 자동으로 잡힙니다.</b> 다음 달에 다시 입력하지 않아도 됩니다.<br><br>' +
+            '금액을 바꾸시면 <b>바꾼 달부터</b> 새 금액이 적용되고, 지난 기록은 그대로 남습니다. 다만 보너스·생활비 사용내역·공과금 실제금액처럼 매달 달라지는 것은 그 달에만 잡힙니다.' },
+    { cat: '수입', q: '월급(정기소득)을 설정하려면?', kw: '월급 수입 정기소득 급여 추가',
+      steps: [
+        '<b>더보기 → 항목 설정</b>에서 위쪽 칩 <b>정기소득</b>을 누릅니다.',
+        '<b>추가</b>로 항목을 만들고 이름·월 금액을 적습니다.',
+        '<b>월급일(매월 며칠)</b>을 정하면 그 날에 달력·사이클에 반영됩니다.',
+        '<b>저장</b>하면 매달 자동으로 수입에 잡힙니다.'
+      ] },
+    { cat: '지출', q: '생활비(공동생활비)를 기록하려면?', kw: '생활비 지출 기록 입력 공동생활비',
+      steps: [
+        '아래 <b>입력</b> 탭으로 갑니다. (홈·달력의 <b>＋ 지출 기록</b> 버튼도 같습니다.)',
+        '<b>공동생활비</b> 칩을 누르면 새 내역이 만들어집니다.',
+        '금액과 사용처를 적으면 바로 반영됩니다.'
+      ] },
+    { cat: '지출', q: '매달 나가는 지출을 자동으로 넣으려면? (반복 지출)', kw: '반복 지출 자동 구독 용돈 매달',
+      steps: [
+        '<b>입력</b> 탭의 <b>반복 지출</b> 카드에서 <b>추가</b>를 누릅니다.',
+        '이름·금액·<b>매월 며칠</b>을 정하고 저장합니다.',
+        '정한 날짜가 지나면 그 달 생활비 내역이 <b>자동으로 만들어집니다.</b> 날짜 전에는 "예정"으로 표시됩니다.'
+      ] },
+    { cat: '흐름 이해', q: '화면은 7월인데 왜 25일부터 금액이 쌓이나요?', kw: '급여일 사이클 7월 8월 25일 왜 제목',
+      body: '<b>제목의 달(예: 7월)은 지금 시점</b>을 나타내고, <b>돈 계산은 급여일 사이클</b>로 합니다.<br><br>' +
+            '급여일이 25일이면 한 사이클은 <b>7/25 ~ 8/24</b>입니다. 25일 급여를 기점으로 그 사이클의 지출·생활비가 쌓여 올라갑니다.<br><br>' +
+            '8월로 넘어가도 이 사이클(7/25~8/24)이 8/24까지 <b>그대로 이어집니다.</b> 8/25이 지나면 새 사이클이 시작됩니다.' },
+    { cat: '흐름 이해', q: '안 쓴 생활비가 다음 달로 넘어가나요? (이월)', kw: '이월 남은 생활비 다음달 초과 차감',
+      body: '<b>공동생활비만</b> 이월됩니다. 이번 달에 남으면 다음 달 예산에 더해지고(이월 +), 초과해서 쓰면 다음 달에서 빠집니다(이월 −).<br><br>' +
+            '현조·신영 <b>개인 용돈</b>은 이월하지 않습니다. 매달 정한 금액만 관리합니다.' },
+    { cat: '적금·자산', q: '적금이 25일에 반영되나요?', kw: '적금 적립일 25일 납입 반영 오름',
+      body: '네. 적금마다 <b>적립일</b>이 있고, 그 날이 지나면 그 달 납입분이 잔액에 더해집니다.<br><br>' +
+            '적립일이 25일이면 25일이 지나야 이번 달 납입이 반영됩니다. 아직 안 지났으면 다음 회차로 표시됩니다. 적립일은 <b>항목 설정 → 적금·저축</b>에서 바꿀 수 있습니다.' },
+    { cat: '적금·자산', q: '적금에서 돈을 꺼내 썼을 때는?', kw: '적금 꺼내 인출 사용 뺀',
+      steps: [
+        '<b>더보기 → 항목 설정 → 적금·저축</b>에서 해당 적금을 엽니다.',
+        '<b>여기서 꺼내 쓰기</b>를 눌러 꺼낸 금액을 적습니다.',
+        '모인 돈에서 그만큼 빠지고 기록이 남습니다. (모인 돈보다 많이는 꺼낼 수 없습니다.)'
+      ] },
+    { cat: '적금·자산', q: '집·차 같은 목돈 지출은 어떻게 기록하나요?', kw: '목돈 지출 집 차 큰 자산 대출',
+      steps: [
+        '아래 <b>자산</b> 탭에서 <b>목돈 지출 → 지출 기록</b>을 누릅니다.',
+        '나간 돈(출금 자산)과, 그 돈으로 생긴 자산·대출을 함께 적습니다.',
+        '현금이 자산으로 바뀐 것이면 순자산은 그대로 유지됩니다.'
+      ] },
+    { cat: '설정', q: '급여일을 바꾸려면?', kw: '급여일 변경 사이클 25일 며칠',
+      steps: [
+        '<b>더보기 → 항목 설정</b>으로 갑니다.',
+        '<b>급여일 · 사이클 기준</b> 카드에서 며칠(1~28)을 입력합니다.',
+        '바꾸면 사이클이 새 급여일 기준으로 다시 계산됩니다.'
+      ] },
+    { cat: '함께 쓰기', q: '배우자와 함께 쓰려면?', kw: '함께 공유 배우자 초대 연결키 공유코드',
+      steps: [
+        '<b>더보기 → 항목 설정 → 공유공간</b>에서 <b>공유코드</b>와 <b>연결키</b>를 확인합니다.',
+        '상대방에게 두 값을 전달합니다. (QR 공유도 됩니다.)',
+        '상대방이 로그인 후 "기존 공유공간 참여"에 넣으면 같은 가계부를 함께 씁니다.',
+        '한 사람이 편집 중이면 상대는 잠깐 잠겨, 같은 항목이 엉키지 않습니다.'
+      ] },
+    { cat: '리포트', q: '이번 달 리포트를 PDF·이미지로 내보내려면?', kw: '리포트 pdf 이미지 내보내기 저장 공유',
+      steps: [
+        '<b>더보기 → 월별 리포트</b>로 갑니다.',
+        '함께 담을 상세 내역이 있으면 아래에서 체크합니다.',
+        '<b>PDF로 저장</b> 또는 <b>이미지로 저장</b>을 누르면 파일로 내려받습니다.'
+      ] }
+  ];
+
   const ENTITY_LABEL = {
     income: '정기소득', bonus: '보너스·상여금', fixed: '월 고정비',
     utility: '공과금 항목', utilityActual: '공과금 실제금액', saving: '적금·저축',
@@ -1373,7 +1462,9 @@
     book: 'M4 5.5A2 2 0 0 1 6 4h13v14H6a2 2 0 0 0-2 2zM8 8h7M8 11.5h7',
     key: 'M14.5 4a5.5 5.5 0 1 0-4.2 9.3L4 19.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 0 14.5 4z' +
          'M16 8h.01',
-    lock: 'M6 10.5h12v9H6zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14v2.5'
+    lock: 'M6 10.5h12v9H6zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14v2.5',
+    help: 'M9 9a3 3 0 1 1 4 2.8c-.8.4-1 .9-1 1.7v.5M12 17h.01',
+    close: 'M6 6l12 12M18 6L6 18'
   };
 
   const icon = (name, size = 22) =>
@@ -3711,6 +3802,51 @@
 
   /* --- 17. 셸 ------------------------------------------------------------- */
 
+  /* 도움말 봇 오버레이. 검색 + 질문 목록 + 펼쳐 보는 단계 안내. 외부 연결 없이 동작. */
+  function helpPanel() {
+    if (!app.helpOpen) return '';
+    const q = (app.helpQuery || '').trim().toLowerCase();
+    const matched = HELP_TOPICS
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => !q || (t.q + ' ' + t.kw + ' ' + t.cat).toLowerCase().includes(q));
+
+    const cats = [];
+    for (const it of matched) {
+      let g = cats.find(c => c.cat === it.t.cat);
+      if (!g) { g = { cat: it.t.cat, items: [] }; cats.push(g); }
+      g.items.push(it);
+    }
+    const answer = t => t.steps
+      ? `<ol class="help-steps">${t.steps.map(s => `<li>${s}</li>`).join('')}</ol>`
+      : `<p class="help-body">${t.body}</p>`;
+
+    return `
+      <div class="help-overlay" data-help-backdrop>
+        <div class="help-sheet" role="dialog" aria-label="도움말">
+          <div class="help-head">
+            <div><b>도움말</b><small>궁금한 걸 검색하거나 눌러 보세요</small></div>
+            <button class="help-x" type="button" data-help-close aria-label="닫기">${icon('close', 20)}</button>
+          </div>
+          <input class="help-search" type="text" data-help-search
+                 placeholder="예: 공과금 추가, 적금 25일, 이월"
+                 value="${esc(app.helpQuery || '')}">
+          <div class="help-list">
+            ${matched.length ? cats.map(g => `
+              <div class="help-cat-title">${esc(g.cat)}</div>
+              ${g.items.map(({ t, i }) => `
+                <div class="help-item ${app.helpSel === i ? 'open' : ''}">
+                  <button class="help-q" type="button" data-help-topic="${i}">
+                    <span>${esc(t.q)}</span>${icon('chevron', 16)}
+                  </button>
+                  ${app.helpSel === i ? `<div class="help-a">${answer(t)}</div>` : ''}
+                </div>`).join('')}
+            `).join('')
+            : '<p class="help-none">찾는 내용이 없습니다. 다른 말로 검색해 보세요.</p>'}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function appShell() {
     // 하단은 자주 쓰는 5개만 둔다. 나머지는 더보기에서 들어간다.
     const tabs = [
@@ -3773,6 +3909,13 @@
               <span class="nav-icon">${icon(icon_)}</span><span>${t}</span></button>`;
           }).join('')}
         </nav>
+
+        <!-- 어디서나 뜨는 도움말 봇 아이콘. 누르면 질문 검색·단계 안내 -->
+        <button class="help-fab" type="button" data-help-open aria-label="도움말 봇">
+          ${icon('help', 24)}<span>도움말</span>
+        </button>
+        ${helpPanel()}
+
         <div id="toast" class="toast" role="status"></div>
       </div>`;
   }
@@ -4362,6 +4505,20 @@
 
     if (t.closest('[data-apply-live]')) { render(); return; }
 
+    // 도움말 봇 열기·닫기·질문 펼치기
+    if (t.closest('[data-help-open]')) { app.helpOpen = true; render(); return; }
+    if (t.closest('[data-help-close]') ||
+        (t.classList && t.classList.contains('help-overlay'))) {
+      app.helpOpen = false; render(); return;
+    }
+    const helpTopic = t.closest('[data-help-topic]');
+    if (helpTopic) {
+      const i = num(helpTopic.dataset.helpTopic);
+      app.helpSel = app.helpSel === i ? null : i;
+      render();
+      return;
+    }
+
     // 결제자별 금액을 누르면 그 사람이 결제한 내역만 걸러 본다(다시 누르면 전체)
     const txOwner = t.closest('[data-tx-owner]');
     if (txOwner) {
@@ -4930,6 +5087,15 @@
       render();
       return;
     }
+  });
+
+  // 도움말 검색 — 입력하는 대로 목록을 좁힌다(입력칸 포커스는 유지)
+  document.addEventListener('input', e => {
+    if (!e.target.matches || !e.target.matches('[data-help-search]')) return;
+    app.helpQuery = e.target.value;
+    render();
+    const el = document.querySelector('[data-help-search]');
+    if (el) { el.focus(); const v = el.value; el.value = ''; el.value = v; }
   });
 
   document.addEventListener('change', e => {
