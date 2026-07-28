@@ -4077,7 +4077,7 @@
         <!-- 챗봇 표준 위치(우측 하단). ＋가 있으면 그 위, 없으면 단독. 콘텐츠는 아래 여백으로 안 가림 -->
         <button class="help-fab ${hasAddFab ? 'above-fab' : 'solo'}" type="button"
                 data-help-open aria-label="도움말 봇" title="도움말">
-          <span class="help-mark">?</span>
+          <span class="help-mark">???</span>
         </button>
         ${helpPanel()}
         ${addFlowPanel()}

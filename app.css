@@ -1733,7 +1733,7 @@ button.ch-lbl:active { transform: scale(.96); }
 .help-fab:active { transform: scale(.95); }
 .help-fab:focus-visible { outline: 3px solid rgba(59,111,224,.32); outline-offset: 3px; }
 .help-fab .help-mark {
-  font-size: 22px; font-weight: 800; line-height: 1;
+  font-size: 14px; font-weight: 800; line-height: 1; letter-spacing: -1px;
   color: var(--blue-dark); font-family: system-ui, sans-serif;
 }
 
