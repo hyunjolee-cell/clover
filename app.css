@@ -1732,7 +1732,10 @@ button.ch-lbl:active { transform: scale(.96); }
 .help-fab:hover { background: var(--blue-pale); }
 .help-fab:active { transform: scale(.95); }
 .help-fab:focus-visible { outline: 3px solid rgba(59,111,224,.32); outline-offset: 3px; }
-.help-fab .ico { flex: none; }
+.help-fab .help-mark {
+  font-size: 22px; font-weight: 800; line-height: 1;
+  color: var(--blue-dark); font-family: system-ui, sans-serif;
+}
 
 /* 콘텐츠가 플로팅 버튼·하단 네비 뒤에 숨지 않도록 페이지 하단 여백을 확보한다 */
 .app.has-add-fab .page { padding-bottom: calc(196px + env(safe-area-inset-bottom)); }
@@ -1744,7 +1747,8 @@ button.ch-lbl:active { transform: scale(.96); }
   display: flex; align-items: flex-end; justify-content: center;
 }
 .help-sheet {
-  width: 100%; max-width: 520px; max-height: 82vh;
+  width: 100%; max-width: 520px;
+  height: 78vh;                 /* 높이 고정 — 검색 결과가 바뀌어도 시트가 커졌다 작아지지 않는다 */
   background: var(--surface); border-radius: 20px 20px 0 0;
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: 0 -8px 30px rgba(20,25,40,.25);
@@ -1770,7 +1774,7 @@ button.ch-lbl:active { transform: scale(.96); }
   border: 1.5px solid var(--blue-pale); border-radius: 14px; background: var(--sky-light);
 }
 .help-search:focus { border-color: var(--blue); background: var(--surface); }
-.help-list { overflow-y: auto; padding: 4px 14px 28px; -webkit-overflow-scrolling: touch; }
+.help-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 28px; -webkit-overflow-scrolling: touch; }
 .help-cat-title {
   font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--blue);
   padding: 16px 6px 6px; text-transform: uppercase;
@@ -1868,3 +1872,20 @@ button.ch-lbl:active { transform: scale(.96); }
   background: var(--g100); color: var(--g700); cursor: pointer; display: grid; place-items: center;
 }
 .add-back:hover { background: var(--g200); }
+
+/* 추가/수정 폼 — 상세 설정 접기(핵심 필드만 먼저 보이게) ------------------- */
+.more-fields { grid-column: 1 / -1; margin: 2px 0; }
+.more-fields > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13.5px; font-weight: 600; color: var(--blue-dark);
+  padding: 8px 12px; border: 1px dashed var(--blue-pale); border-radius: 10px;
+  background: var(--sky-light);
+}
+.more-fields > summary::-webkit-details-marker { display: none; }
+.more-fields > summary::before { content: "＋ "; font-weight: 700; }
+.more-fields[open] > summary::before { content: "− "; }
+.more-fields[open] > summary { margin-bottom: 12px; }
+.more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.more-grid .field.wide { grid-column: 1 / -1; }
+@media (max-width: 699px) { .more-grid { grid-template-columns: 1fr; } }

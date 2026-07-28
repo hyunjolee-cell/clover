@@ -2164,8 +2164,6 @@
             <input name="name" value="${esc(x.name)}"></label>
           ${opts.owner ? `<label class="field"><span>${opts.ownerLabel || '소유자'}</span>
             ${ownerSelect('owner', x.owner)}</label>` : ''}
-          <label class="field"><span>적용 시작월</span>
-            <input name="from" type="month" value="${esc(applied)}"></label>
           <label class="field"><span>${opts.amountLabel || '월 금액'}</span>
             <input name="amount" inputmode="numeric" value="${value}"></label>
           ${kind === 'income' ? `
@@ -2175,14 +2173,22 @@
             <label class="field"><span>지금까지 모인 돈</span>
               <input name="startBalance" inputmode="numeric" value="${num(x.startBalance)}"></label>
             <label class="field"><span>잔액 기준월</span>
-              <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>
-            <label class="field"><span>용도</span>
-              <select name="purpose">
-                <option value="flexible" ${x.purpose === 'flexible' ? 'selected' : ''}>언제든 쓰는 돈</option>
-                <option value="longterm" ${x.purpose === 'longterm' ? 'selected' : ''}>목적까지 모으는 돈</option>
-              </select></label>` : ''}
-          <label class="field wide"><span>메모</span>
-            <input name="memo" value="${esc(x.memo || '')}" placeholder="비고를 적어두면 나중에 도움이 됩니다"></label>
+              <input name="startMonth" type="month" value="${esc(x.startMonth)}"></label>` : ''}
+          <details class="more-fields wide">
+            <summary>상세 설정 · 적용 시작월${kind === 'saving' ? ' · 용도' : ''} · 메모</summary>
+            <div class="more-grid">
+              <label class="field"><span>적용 시작월</span>
+                <input name="from" type="month" value="${esc(applied)}"></label>
+              ${kind === 'saving' ? `
+                <label class="field"><span>용도</span>
+                  <select name="purpose">
+                    <option value="flexible" ${x.purpose === 'flexible' ? 'selected' : ''}>언제든 쓰는 돈</option>
+                    <option value="longterm" ${x.purpose === 'longterm' ? 'selected' : ''}>목적까지 모으는 돈</option>
+                  </select></label>` : ''}
+              <label class="field wide"><span>메모</span>
+                <input name="memo" value="${esc(x.memo || '')}" placeholder="비고를 적어두면 나중에 도움이 됩니다"></label>
+            </div>
+          </details>
           ${kind === 'saving' ? `
             <div class="wide bal-box">
               <div class="bal-now">
@@ -4071,7 +4077,7 @@
         <!-- 챗봇 표준 위치(우측 하단). ＋가 있으면 그 위, 없으면 단독. 콘텐츠는 아래 여백으로 안 가림 -->
         <button class="help-fab ${hasAddFab ? 'above-fab' : 'solo'}" type="button"
                 data-help-open aria-label="도움말 봇" title="도움말">
-          ${icon('help', 20)}
+          <span class="help-mark">?</span>
         </button>
         ${helpPanel()}
         ${addFlowPanel()}
@@ -4827,7 +4833,18 @@
       return;
     }
 
-    if (t.closest('[data-close-row]')) { app.openRow = null; render(); return; }
+    if (t.closest('[data-close-row]')) {
+      // 방금 새로 만든(미저장) 항목이면 접기/취소가 곧 "생성 취소"다 → 항목을 되돌린다
+      const openId = app.openRow ? app.openRow.split(':')[1] : null;
+      if (app.draft && app.draft.id === openId) {
+        if (!draftDirty()) { await discardDraft(); render(); return; }
+        if (confirm('작성 중인 내용이 저장되지 않고 취소됩니다. 취소할까요?')) {
+          await discardDraft(); render(); return;
+        }
+        return;   // 취소하지 않으면 폼을 그대로 둔다
+      }
+      app.openRow = null; render(); return;
+    }
 
     const pickDate = t.closest('[data-pick-date]');
     if (pickDate) {
