@@ -1482,7 +1482,7 @@
     key: 'M14.5 4a5.5 5.5 0 1 0-4.2 9.3L4 19.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 0 14.5 4z' +
          'M16 8h.01',
     lock: 'M6 10.5h12v9H6zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14v2.5',
-    help: 'M9 9a3 3 0 1 1 4 2.8c-.8.4-1 .9-1 1.7v.5M12 17h.01',
+    help: 'M9.3 9.2a2.8 2.8 0 1 1 4.2 2.6c-1 .6-1.5 1.1-1.5 2.2M12 17.3h.01',
     close: 'M6 6l12 12M18 6L6 18'
   };
 
@@ -4035,6 +4035,8 @@
               <button class="undo-btn" type="button" data-undo
                       title="직전 변경 되돌리기">${icon('undo', 18)}
                 <span>되돌리기</span></button>` : ''}
+            <button class="help-btn" type="button" data-help-open
+                    title="도움말" aria-label="도움말">${icon('help', 18)}</button>
             <span class="sync sync-${app.syncTone}">${esc(app.sync)}</span>
             <span class="badge ${ownerClass(app.space.actor)}">${esc(app.space.actor)}</span>
           </div>
@@ -4064,11 +4066,6 @@
           }).join('')}
         </nav>
 
-        <!-- 어디서나 뜨는 도움말 봇 아이콘(우측 하단 작은 원형). 누르면 질문 검색·단계 안내 -->
-        <button class="help-fab ${['home', 'calendar', 'monthly'].includes(app.tab) ? 'above-fab' : ''}"
-                type="button" data-help-open aria-label="도움말 봇" title="도움말">
-          ${icon('help', 22)}
-        </button>
         ${helpPanel()}
         ${addFlowPanel()}
 
@@ -5245,13 +5242,24 @@
     }
   });
 
-  // 도움말 검색 — 목록만 갈아 끼운다. 입력칸은 그대로 두어 한글 조합이 끊기지 않게 한다.
+  // 도움말 검색 — 목록만 갈아 끼운다. 입력칸은 그대로 둔다.
+  // 한글 조합 중(isComposing)에는 목록을 바꾸지 않고, 글자가 완성될 때(compositionend)만 갱신한다.
+  // 그러지 않으면 "고"가 "괴"로 깨지고 목록이 자모마다 튄다.
+  const refreshHelpList = () => {
+    app.helpSel = null;
+    const list = document.querySelector('.help-list');
+    if (list) list.innerHTML = helpListHtml();
+  };
   document.addEventListener('input', e => {
     if (!e.target.matches || !e.target.matches('[data-help-search]')) return;
     app.helpQuery = e.target.value;
-    app.helpSel = null;                       // 검색이 바뀌면 펼침은 접는다
-    const list = document.querySelector('.help-list');
-    if (list) list.innerHTML = helpListHtml();
+    if (e.isComposing) return;                // 조합 중엔 갱신하지 않는다
+    refreshHelpList();
+  });
+  document.addEventListener('compositionend', e => {
+    if (!e.target.matches || !e.target.matches('[data-help-search]')) return;
+    app.helpQuery = e.target.value;
+    refreshHelpList();
   });
 
   document.addEventListener('change', e => {

@@ -241,6 +241,14 @@ select {
   background: var(--sky); color: var(--blue-deep);
   white-space: nowrap;
 }
+/* 상단 도움말 버튼 — 콘텐츠를 가리지 않도록 헤더에 둔다 */
+.help-btn {
+  flex: none; width: 32px; height: 32px; border: none; border-radius: 999px;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--sky); color: var(--blue-dark);
+}
+.help-btn:hover { background: var(--blue-pale); }
+.help-btn .ico { flex: none; }
 
 #liveBanner {
   display: none;
@@ -1740,18 +1748,18 @@ button.ch-lbl:active { transform: scale(.96); }
 @keyframes helpUp { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .help-sheet { animation: none; } }
 .help-head {
-  display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 20px 20px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 16px 12px 20px;
   background: linear-gradient(180deg, var(--sky-light), var(--surface));
 }
 .help-head b { font-size: 19px; color: var(--blue-deep); }
 .help-head small { display: block; color: var(--g500); font-size: 13px; margin-top: 3px; }
 .help-x {
   flex: none; width: 36px; height: 36px; border: none; border-radius: 10px;
-  background: var(--surface); color: var(--g700); cursor: pointer;
-  display: grid; place-items: center; box-shadow: 0 1px 3px rgba(27,35,51,.08);
+  background: var(--g100); color: var(--g600); cursor: pointer;
+  display: grid; place-items: center;
 }
-.help-x:hover { background: var(--g100); }
+.help-x:hover { background: var(--g200); color: var(--g800); }
 .help-search {
   margin: 0 20px 10px; padding: 13px 15px; font-size: 15px;
   border: 1.5px solid var(--blue-pale); border-radius: 14px; background: var(--sky-light);
