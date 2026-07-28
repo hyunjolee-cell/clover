@@ -4213,6 +4213,14 @@
         success: '항목을 추가했습니다.'
       }
     );
+    // 새로 만든 항목 폼으로 화면을 맞추고 이름 칸에 커서를 둔다
+    const form = document.querySelector(`form[data-row="${kind}"][data-id="${entity.id}"]`);
+    if (form) {
+      form.classList.add('just-added');
+      form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const first = form.querySelector('input[name="name"]');
+      if (first) { first.focus(); first.select(); }
+    }
   }
 
   async function deleteEntity(kind, id) {
