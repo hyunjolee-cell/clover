@@ -1341,7 +1341,7 @@
         '<b>더보기 → 항목 설정</b>으로 갑니다.',
         '<b>급여일 · 사이클 기준</b> 카드에서 며칠(1~28)을 입력합니다.',
         '바꾸면 사이클이 새 급여일 기준으로 다시 계산됩니다.'
-      ], go: { label: '설정 열기', tab: 'settings', group: 'income' } },
+      ], go: { label: '급여일 설정으로 이동', tab: 'settings', group: 'income', anchor: '[data-anchor="payday"]' } },
     { cat: '함께 쓰기', icon: 'key', q: '배우자와 함께 쓰려면?',
       kw: '함께 공유 배우자 초대 연결키 공유코드',
       steps: [
@@ -2689,7 +2689,7 @@
           <div class="list">${historyRows(kind, list, opts)}</div>
         </article>
 
-        <article class="card">
+        <article class="card" data-anchor="payday">
           <div class="card-head"><h3>급여일 · 사이클 기준</h3></div>
           <label class="field">
             <span>매월 며칠에 급여를 받으시나요 (1~28)</span>
@@ -3978,7 +3978,10 @@
     app.tab = go.tab;
     if (go.group) app.settingsGroup = go.group;
     render();
-    if (go.add) { addEntity(go.add).catch(() => {}); }
+    if (go.add) { addEntity(go.add).catch(() => {}); return; }   // 추가형: 새 항목 폼으로
+    // 이동만 하는 경우: 안내한 항목 위치로 스크롤(anchor). 없으면 맨 위로.
+    const el = go.anchor && document.querySelector(go.anchor);
+    if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
     else window.scrollTo({ top: 0 });
     if (app.tab === 'monthly') applyRecurrings().catch(() => {});
   }
@@ -4020,8 +4023,9 @@
     const subTitle = { forecast: '자산 포캐스팅', flow: '자금 흐름', notes: '특이사항 메모', report: '월별 리포트',
                        settings: '항목 설정', logs: '변경 로그', defaults: '기본값 관리', budgets: '생활비 예산' }[app.tab];
 
+    const hasAddFab = ['home', 'calendar', 'monthly'].includes(app.tab);
     return `
-      <div class="app">
+      <div class="app ${hasAddFab ? 'has-add-fab' : 'no-add-fab'}">
         <header class="topbar">
           <div class="brand">
             ${sub ? `<button class="back" type="button" data-back aria-label="뒤로">${icon("back", 22)}</button>`
@@ -4035,8 +4039,6 @@
               <button class="undo-btn" type="button" data-undo
                       title="직전 변경 되돌리기">${icon('undo', 18)}
                 <span>되돌리기</span></button>` : ''}
-            <button class="help-btn" type="button" data-help-open
-                    title="도움말" aria-label="도움말">${icon('help', 18)}</button>
             <span class="sync sync-${app.syncTone}">${esc(app.sync)}</span>
             <span class="badge ${ownerClass(app.space.actor)}">${esc(app.space.actor)}</span>
           </div>
@@ -4066,6 +4068,11 @@
           }).join('')}
         </nav>
 
+        <!-- 챗봇 표준 위치(우측 하단). ＋가 있으면 그 위, 없으면 단독. 콘텐츠는 아래 여백으로 안 가림 -->
+        <button class="help-fab ${hasAddFab ? 'above-fab' : 'solo'}" type="button"
+                data-help-open aria-label="도움말 봇" title="도움말">
+          ${icon('help', 20)}
+        </button>
         ${helpPanel()}
         ${addFlowPanel()}
 
