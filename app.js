@@ -4077,7 +4077,11 @@
         <!-- 챗봇 표준 위치(우측 하단). ＋가 있으면 그 위, 없으면 단독. 콘텐츠는 아래 여백으로 안 가림 -->
         <button class="help-fab ${hasAddFab ? 'above-fab' : 'solo'}" type="button"
                 data-help-open aria-label="도움말 봇" title="도움말">
-          <span class="help-mark">???</span>
+          <svg class="help-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8.6 9.2a3.4 3.4 0 1 1 5.2 3c-1 .65-1.8 1.2-1.8 2.4"/>
+            <circle cx="12" cy="17.6" r="1.05" fill="currentColor" stroke="none"/>
+          </svg>
         </button>
         ${helpPanel()}
         ${addFlowPanel()}
