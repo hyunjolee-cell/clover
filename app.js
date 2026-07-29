@@ -4696,7 +4696,13 @@
     if (helpTopic) {
       const i = num(helpTopic.dataset.helpTopic);
       app.helpSel = app.helpSel === i ? null : i;
-      render();
+      // 검색칸을 다시 그리지 않도록 목록만 갱신하고, 펼친 답변으로 스크롤을 맞춘다
+      const list = document.querySelector('.help-list');
+      if (list) {
+        list.innerHTML = helpListHtml();
+        const opened = list.querySelector('.help-item.open');
+        if (opened) opened.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      } else render();
       return;
     }
 
